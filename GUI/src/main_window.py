@@ -1,43 +1,60 @@
 import sys
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QSizePolicy
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel
+
+# Import komponen modular kamu
 from depth_view import DepthView
 from radar_view import RadarView
+# Nantinya kamu bisa import AlertPanel dan ControlsPanel di sini
 
 class MainWindow(QMainWindow):
+    PAD = 20  # Jarak antar widget (Padding)
+
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("🤖 Robot Surveillance & Monitoring HUD")
+        self.setMinimumSize(1024, 768)
+        self.resize(1280, 720)
 
-        # Pengaturan Jendela Utama
-        self.setWindowTitle("Vision System PBL GUI")
-        self.resize(1024, 768)
+        # 1. DASAR: Depth View (Video Kamera) sebagai Background Utama
+        # Kita buat DepthView memenuhi seluruh jendela
+        self.area_kamera = DepthView()
+        self.setCentralWidget(self.area_kamera)
 
-        # Membuat Widget Pusat
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        # 2. OVERLAY: Tempat menaruh elemen HUD (Radar, dll)
+        # Widget ini transparan dan menempel di atas kamera
+        self.overlay = QWidget(self.area_kamera)
+        self.overlay.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        # Layout Utama: Kiri dan Kanan
-        main_layout = QHBoxLayout(central_widget)
+        # 3. KONTEN HUD
+        # Kita panggil Radar yang sudah kita buat tadi
+        self.radar = RadarView(self.overlay)
+        
+        # --- Kamu bisa tambah AlertPanel atau InfoPanel di sini nanti ---
+        # self.alert_panel = AlertPanel(self.overlay)
 
-        # --- Bagian Kiri ---
-        kiri_layout = QVBoxLayout()
-        self.area_kamera = DepthView() 
-        kiri_layout.addWidget(self.area_kamera)
+    def resizeEvent(self, event):
+        """Fungsi ini otomatis jalan saat jendela dibesar/kecilkan"""
+        super().resizeEvent(event)
+        W = self.width()
+        H = self.height()
 
-        # --- Bagian Kanan ---
-        kanan_layout = QVBoxLayout()
-        label_kanan = QLabel("Area untuk Controls & Alert Panel nanti")
-        label_kanan.setStyleSheet("background-color: lightblue; border: 1px solid black;")
-        kanan_layout.addWidget(label_kanan)
-        self.radar = RadarView()
-        kanan_layout.addWidget(self.radar, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom)
+        # Pastikan overlay selalu menutupi seluruh area kamera
+        self.overlay.setGeometry(0, 0, W, H)
 
-        # Gabungkan ke layout utama
-        main_layout.addLayout(kiri_layout, 70) 
-        main_layout.addLayout(kanan_layout, 30)
+        # POSISI RADAR: Pojok Kanan Bawah
+        rw, rh = self.radar.width(), self.radar.height()
+        self.radar.move(W - rw - self.PAD, H - rh - self.PAD)
+
+        # POSISI LAIN (Contoh untuk nanti):
+        # self.alert_panel.move(self.PAD, self.PAD) # Pojok Kiri Atas
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    
+    # Memberikan gaya "Fusion" agar lebih modern
+    app.setStyle("Fusion")
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
