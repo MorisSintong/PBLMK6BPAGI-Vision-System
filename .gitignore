@@ -71,3 +71,4 @@ slprj/
 .idea/
 *.swp
 *.swo
+*.pyc
