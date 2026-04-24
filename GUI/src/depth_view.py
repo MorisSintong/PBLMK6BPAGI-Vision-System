@@ -1,32 +1,62 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QStackedWidget
 from PyQt6.QtCore import Qt
 
 class DepthView(QWidget):
     def __init__(self):
         super().__init__()
         
-        # Layout utama untuk area kamera
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0) # Menghilangkan jarak tepi (margin) agar layar penuh
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Membuat Label yang akan berfungsi sebagai "Layar TV" atau monitor
-        self.layar_kamera = QLabel("KAMERA OFFLINE\nMenunggu koneksi dari vision...")
-        self.layar_kamera.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Memberikan warna latar hitam seperti layar yang mati, dan teks putih
-        self.layar_kamera.setStyleSheet("""
+        # Menggunakan QStackedWidget untuk menumpuk layar
+        self.stacked_widget = QStackedWidget()
+        layout.addWidget(self.stacked_widget)
+
+        # ── Halaman 0: Layar RGB Saja ──
+        self.label_rgb = self._create_screen("KAMERA OFFLINE\n(Mode RGB)")
+        self.stacked_widget.addWidget(self.label_rgb)
+
+        # ── Halaman 1: Layar Depth Saja ──
+        self.label_depth = self._create_screen("KAMERA OFFLINE\n(Mode Depth)")
+        self.stacked_widget.addWidget(self.label_depth)
+
+        # ── Halaman 2: Layar Keduanya (Split Screen) ──
+        self.label_combined = self._create_screen("KAMERA OFFLINE\n(Mode Overlay Object)")
+        self.stacked_widget.addWidget(self.label_combined)
+
+    def _create_screen(self, text):
+        """Fungsi helper untuk membuat label layar hitam dengan format seragam"""
+        lbl = QLabel(text)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet("""
             background-color: #1e1e1e; 
             color: #aaaaaa; 
             font-size: 20px;
             font-weight: bold;
             border: 2px dashed #555555;
         """)
+        return lbl
 
-        layout.addWidget(self.layar_kamera)
+    # ── FUNGSI KONTROL DARI GUI ──
+    def set_view_mode(self, mode_index):
+        """Mengubah halaman yang sedang aktif (0=RGB, 1=Depth, 2=Keduanya)"""
+        self.stacked_widget.setCurrentIndex(mode_index)
 
-    # --- FUNGSI PENTING UNTUK NANTI ---
-    # Fungsi ini belum kita pakai sekarang, tapi ini akan dipanggil oleh 
-    # camera_thread.py dari tim vision kalian untuk mengirim gambar video terus-menerus
-    def update_frame(self, pixmap):
-        self.layar_kamera.setPixmap(pixmap)
-        self.layar_kamera.setScaledContents(True) # Agar video pas dengan ukuran jendela
+    # ── FUNGSI PENERIMA DARI TIM VISION ──
+    def update_frames(self, rgb_pixmap=None, depth_pixmap=None):
+        """
+        Fungsi ini siap menerima 2 gambar sekaligus dari camera_thread.
+        """
+        if rgb_pixmap:
+            # Update ke layar RGB tunggal dan layar RGB split
+            self.label_rgb.setPixmap(rgb_pixmap)
+            self.label_rgb.setScaledContents(True)
+            self.label_both_rgb.setPixmap(rgb_pixmap)
+            self.label_both_rgb.setScaledContents(True)
+            
+        if depth_pixmap:
+            # Update ke layar Depth tunggal dan layar Depth split
+            self.label_depth.setPixmap(depth_pixmap)
+            self.label_depth.setScaledContents(True)
+            self.label_both_depth.setPixmap(depth_pixmap)
+            self.label_both_depth.setScaledContents(True)

@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
         )
         self.controls_panel.camera_start_requested.connect(self._on_camera_start)
         self.controls_panel.camera_stop_requested.connect(self._on_camera_stop)
+        self.controls_panel.view_mode_changed.connect(self.area_kamera.set_view_mode)
 
     def _on_camera_start(self):
         # TODO: sambungkan ke camera_thread nanti
