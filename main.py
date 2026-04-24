@@ -12,16 +12,13 @@ import sys
 import os
 
 # ── sys.path registration ─────────────────────────────────────────────────────
-# Allows all submodules to use flat imports (e.g. `from camera_thread import ...`)
-# without needing package __init__.py files.
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SEARCH_PATHS = [
-    os.path.join(BASE_DIR, "gui",    "src"),
-    os.path.join(BASE_DIR, "gui",    "inc"),
-    os.path.join(BASE_DIR, "vision", "src"),
-    os.path.join(BASE_DIR, "vision", "inc"),
+    os.path.join(BASE_DIR, "GUI",    "src"),
+    os.path.join(BASE_DIR, "GUI",    "inc"),
+    os.path.join(BASE_DIR, "Vision", "src"),
+    os.path.join(BASE_DIR, "Vision", "inc"),
 ]
 
 for path in SEARCH_PATHS:
@@ -31,14 +28,11 @@ for path in SEARCH_PATHS:
 # ── Qt bootstrap ──────────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore    import Qt
-from PyQt6.QtGui     import QIcon
-
-from main_window import MainWindow
-from ui_config   import APP_NAME, WINDOW_MIN_W, WINDOW_MIN_H
+from main_window     import MainWindow
+from ui_config       import APP_NAME, WINDOW_MIN_W, WINDOW_MIN_H
 
 # ── entry point ───────────────────────────────────────────────────────────────
 def main() -> int:
-    # High-DPI scaling (automatic in PyQt6, but explicit for clarity)
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
@@ -48,12 +42,11 @@ def main() -> int:
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("depth-obstacle-detector")
 
-    # Apply global stylesheet
     try:
         from styles import GLOBAL_STYLESHEET
         app.setStyleSheet(GLOBAL_STYLESHEET)
     except ImportError:
-        pass  # styles.py is optional
+        pass
 
     window = MainWindow()
     window.setMinimumSize(WINDOW_MIN_W, WINDOW_MIN_H)

@@ -1,40 +1,105 @@
 import sys
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel
-from depth_view import DepthView
-from radar_view import RadarView
+from PyQt6.QtCore    import Qt
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget,
+    QHBoxLayout, QVBoxLayout, QTabWidget
+)
+from depth_view     import DepthView
+from radar_view     import RadarView
+from Alert_panel    import AlertPanel
+from controls_panel import ControlsPanel
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # Pengaturan Jendela Utama
         self.setWindowTitle("Vision System PBL GUI")
-        self.resize(1024, 768)
+        self.resize(1280, 768)
 
-        # Membuat Widget Pusat
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Layout Utama: Kiri dan Kanan
         main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(4)
 
-        # --- Bagian Kiri ---
-        kiri_layout = QVBoxLayout()
-        self.area_kamera = DepthView() 
-        kiri_layout.addWidget(self.area_kamera)
+        # ── Bagian Kiri: Camera View ──────────────────────────────────
+        self.area_kamera = DepthView()
+        main_layout.addWidget(self.area_kamera, stretch=65)
 
-        # --- Bagian Kanan ---
-        kanan_layout = QVBoxLayout()
-        label_kanan = QLabel("Area untuk Controls & Alert Panel nanti")
-        label_kanan.setStyleSheet("background-color: lightblue; border: 1px solid black;")
-        kanan_layout.addWidget(label_kanan)
+        # ── Bagian Kanan: Tab Widget ──────────────────────────────────
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #45475a;
+                border-radius: 6px;
+                background: #1e1e2e;
+            }
+            QTabBar::tab {
+                background: #313244;
+                color: #cdd6f4;
+                padding: 8px 16px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                min-width: 120px;
+            }
+            QTabBar::tab:selected {
+                background: #89b4fa;
+                color: #1e1e2e;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #45475a;
+            }
+        """)
+
+        # ── Tab 1: Controls + Alert ───────────────────────────────────
+        tab1 = QWidget()
+        tab1_layout = QVBoxLayout(tab1)
+        tab1_layout.setContentsMargins(6, 6, 6, 6)
+        tab1_layout.setSpacing(6)
+
+        self.controls_panel = ControlsPanel()
+        self.alert_panel    = AlertPanel()
+
+        tab1_layout.addWidget(self.controls_panel, stretch=40)
+        tab1_layout.addWidget(self.alert_panel,    stretch=60)
+
+        self.tab_widget.addTab(tab1, "🎛️  Controls & Alert")
+
+        # ── Tab 2: Radar ──────────────────────────────────────────────
+        tab2 = QWidget()
+        tab2_layout = QVBoxLayout(tab2)
+        tab2_layout.setContentsMargins(6, 6, 6, 6)
+        tab2_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.radar = RadarView()
-        kanan_layout.addWidget(self.radar, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom)
+        self.radar.setFixedSize(280, 280)          # ukuran lebih compact
+        tab2_layout.addWidget(self.radar)
 
-        # Gabungkan ke layout utama
-        main_layout.addLayout(kiri_layout, 70) 
-        main_layout.addLayout(kanan_layout, 30)
+        self.tab_widget.addTab(tab2, "📡  Radar")
+
+        main_layout.addWidget(self.tab_widget, stretch=35)
+
+        # ── Sambungkan sinyal ─────────────────────────────────────────
+        self._connect_signals()
+
+    def _connect_signals(self):
+        self.controls_panel.thresholds_changed.connect(
+            self.alert_panel.set_thresholds
+        )
+        self.controls_panel.camera_start_requested.connect(self._on_camera_start)
+        self.controls_panel.camera_stop_requested.connect(self._on_camera_stop)
+
+    def _on_camera_start(self):
+        # TODO: sambungkan ke camera_thread nanti
+        pass
+
+    def _on_camera_stop(self):
+        # TODO: sambungkan ke camera_thread nanti
+        pass
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
