@@ -71,4 +71,7 @@ slprj/
 .idea/
 *.swp
 *.swo
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
