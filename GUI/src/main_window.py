@@ -46,6 +46,11 @@ class MainWindow(QMainWindow):
         # ── Sambungkan sinyal GUI internal ────────────────────────────
         self._connect_signals()
 
+        # ── Kamera thread ─────────────────────────────────────────────
+        self.camera_thread = CameraThread(camera_index=0, parent=self)
+        self.camera_thread.frame_pair_ready.connect(self.area_kamera.update_frames)
+        self.camera_thread.error.connect(self._on_camera_error)
+
     def _connect_signals(self):
         self.controls_panel.thresholds_changed.connect(
             self.alert_panel.set_thresholds
@@ -55,10 +60,21 @@ class MainWindow(QMainWindow):
         self.controls_panel.view_mode_changed.connect(self.area_kamera.set_view_mode)
 
     def _on_camera_start(self):
-        pass
+        self.camera_thread.start_capture()
 
     def _on_camera_stop(self):
-        pass
+        self.camera_thread.stop_capture()
+
+    def _on_camera_error(self, message: str):
+        self.controls_panel._camera_running = False
+        self.controls_panel.btn_start.setEnabled(True)
+        self.controls_panel.btn_stop.setEnabled(False)
+        self.controls_panel.camera_status_label.setText(f"Status: ❌ {message}")
+        self.controls_panel.camera_status_label.setStyleSheet("color: #f38ba8;")
+
+    def closeEvent(self, event):
+        self.camera_thread.stop_capture()
+        super().closeEvent(event)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
