@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QStackedWidget
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QStackedWidget
 from PyQt6.QtCore import Qt
 
 class DepthView(QWidget):
@@ -47,16 +47,14 @@ class DepthView(QWidget):
         """
         Fungsi ini siap menerima 2 gambar sekaligus dari camera_thread.
         """
-        if rgb_pixmap:
-            # Update ke layar RGB tunggal dan layar RGB split
+        if rgb_pixmap is not None:
+            # Update ke layar RGB tunggal dan layar overlay
             self.label_rgb.setPixmap(rgb_pixmap)
             self.label_rgb.setScaledContents(True)
-            self.label_both_rgb.setPixmap(rgb_pixmap)
-            self.label_both_rgb.setScaledContents(True)
-            
-        if depth_pixmap:
-            # Update ke layar Depth tunggal dan layar Depth split
+            self.label_combined.setPixmap(rgb_pixmap)
+            self.label_combined.setScaledContents(True)
+
+        if depth_pixmap is not None:
+            # Update ke layar Depth tunggal
             self.label_depth.setPixmap(depth_pixmap)
             self.label_depth.setScaledContents(True)
-            self.label_both_depth.setPixmap(depth_pixmap)
-            self.label_both_depth.setScaledContents(True)
