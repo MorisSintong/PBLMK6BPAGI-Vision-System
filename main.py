@@ -8,8 +8,8 @@ Responsibilities:
   - Start the Qt event loop
 """
 
-import sys
 import os
+import sys
 
 # ── sys.path registration ─────────────────────────────────────────────────────
 # Allows all submodules to use flat imports (e.g. `from camera_thread import ...`)
@@ -18,8 +18,8 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SEARCH_PATHS = [
-    os.path.join(BASE_DIR, "gui",    "src"),
-    os.path.join(BASE_DIR, "gui",    "inc"),
+    os.path.join(BASE_DIR, "gui", "src"),
+    os.path.join(BASE_DIR, "gui", "inc"),
     os.path.join(BASE_DIR, "vision", "src"),
     os.path.join(BASE_DIR, "vision", "inc"),
 ]
@@ -29,12 +29,12 @@ for path in SEARCH_PATHS:
         sys.path.insert(0, path)
 
 # ── Qt bootstrap ──────────────────────────────────────────────────────────────
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore    import Qt
-from PyQt6.QtGui     import QIcon
-
+# from PyQt6.QtGui     import QIcon   #tidak digunakan, nanti kalau perlu tinggal di ilangin simbol komennya
 from main_window import MainWindow
-from ui_config   import APP_NAME, WINDOW_MIN_W, WINDOW_MIN_H
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
+from ui_config import APP_NAME, WINDOW_MIN_H, WINDOW_MIN_W
+
 
 # ── entry point ───────────────────────────────────────────────────────────────
 def main() -> int:
@@ -50,7 +50,8 @@ def main() -> int:
 
     # Apply global stylesheet
     try:
-        from styles import GLOBAL_STYLESHEET
+        from styles import GLOBAL_STYLESHEET  # type: ignore
+
         app.setStyleSheet(GLOBAL_STYLESHEET)
     except ImportError:
         pass  # styles.py is optional

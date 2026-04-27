@@ -1,0 +1,9 @@
+{
+  "include": ["."],
+  "pythonVersion": "3.10",
+  "pythonPlatform": "Windows",
+  "venvPath": "C:/Users/Moris/miniconda3/envs",
+  "venv": "depth-obstacle-detector",
+  "extraPaths": [".", "./GUI/src", "./GUI/inc", "./Vision/src", "./Vision/inc"],
+  "typeCheckingMode": "standard",
+}
