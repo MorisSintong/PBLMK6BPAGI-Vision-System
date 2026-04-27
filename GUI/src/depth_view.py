@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QStackedWidget
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QStackedWidget
 from PyQt6.QtCore import Qt
 
 class DepthView(QWidget):
@@ -21,8 +21,8 @@ class DepthView(QWidget):
         self.stacked_widget.addWidget(self.label_depth)
 
         # ── Halaman 2: Layar Keduanya (Split Screen) ──
-        self.label_combined = self._create_screen("KAMERA OFFLINE\n(Mode Overlay Object)")
-        self.stacked_widget.addWidget(self.label_combined)
+        self.overlay_page = self._create_overlay_page()
+        self.stacked_widget.addWidget(self.overlay_page)
 
     def _create_screen(self, text):
         """Fungsi helper untuk membuat label layar hitam dengan format seragam"""
@@ -37,6 +37,19 @@ class DepthView(QWidget):
         """)
         return lbl
 
+    def _create_overlay_page(self):
+        page = QWidget()
+        layout = QHBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self.label_overlay_rgb = self._create_screen("KAMERA OFFLINE\n(RGB)")
+        self.label_overlay_depth = self._create_screen("DEPTH BELUM TERSEDIA\n(Depth)")
+
+        layout.addWidget(self.label_overlay_rgb, 1)
+        layout.addWidget(self.label_overlay_depth, 1)
+        return page
+
     # ── FUNGSI KONTROL DARI GUI ──
     def set_view_mode(self, mode_index):
         """Mengubah halaman yang sedang aktif (0=RGB, 1=Depth, 2=Keduanya)"""
@@ -48,13 +61,15 @@ class DepthView(QWidget):
         Fungsi ini siap menerima 2 gambar sekaligus dari camera_thread.
         """
         if rgb_pixmap is not None:
-            # Update ke layar RGB tunggal dan layar overlay
+            # Update ke layar RGB tunggal dan panel RGB overlay
             self.label_rgb.setPixmap(rgb_pixmap)
             self.label_rgb.setScaledContents(True)
-            self.label_combined.setPixmap(rgb_pixmap)
-            self.label_combined.setScaledContents(True)
+            self.label_overlay_rgb.setPixmap(rgb_pixmap)
+            self.label_overlay_rgb.setScaledContents(True)
 
         if depth_pixmap is not None:
-            # Update ke layar Depth tunggal
+            # Update ke layar Depth tunggal dan panel Depth overlay
             self.label_depth.setPixmap(depth_pixmap)
             self.label_depth.setScaledContents(True)
+            self.label_overlay_depth.setPixmap(depth_pixmap)
+            self.label_overlay_depth.setScaledContents(True)
