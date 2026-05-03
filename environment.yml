@@ -1,5 +1,7 @@
 name: depth-obstacle-detector
 channels:
+  - pytorch
+  - nvidia
   - conda-forge
   - defaults
 
@@ -8,14 +10,19 @@ dependencies:
   - numpy=1.26
   - opencv=4.9
   - pyqtgraph=0.13
-  - pyserial=3.5          # optional: for serial alarm output
-  - scipy=1.13            # connected-component filtering
+  - pyserial=3.5 # optional: for serial alarm output
+  - scipy=1.13 # connected-component filtering
   - pillow=10.3
+
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
 
   - pip
   - pip:
       - pyqt6==6.7.0
       - pyqt6-qt6==6.7.0
-      - pyrealsense2==2.55.1.6486   # Intel RealSense SDK wrapper
-      - ultralytics==8.2.0          # YOLOv8-nano for object detection
-      - open3d==0.18.0              # point cloud viewer (optional)
+      - pyrealsense2==2.55.1.6486 # Intel RealSense SDK wrapper
+      - ultralytics==8.2.0 # YOLOv8-nano for object detection
+      - open3d==0.18.0 # point cloud viewer (optional)
