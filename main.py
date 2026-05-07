@@ -38,6 +38,7 @@ def main() -> int:
     )
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("depth-obstacle-detector")

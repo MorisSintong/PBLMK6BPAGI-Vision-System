@@ -81,6 +81,8 @@ class AlertPanel(QWidget):
         if distance_m is None:
             self.lbl_distance.setText("-- m")
             self.info_box.setStyleSheet("background-color: #313244; border: 2px solid #45475a; border-radius: 15px;")
+            self.lbl_distance.setStyleSheet("color: white; background: transparent;")
+            self.lbl_object_name.setStyleSheet("color: #cdd6f4; background: transparent;")
             return
 
         self.lbl_distance.setText(f"{distance_m:.1f} m")

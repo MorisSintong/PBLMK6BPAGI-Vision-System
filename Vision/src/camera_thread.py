@@ -1,8 +1,10 @@
 import cv2
 import os
+import threading
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
+from ui_config import DEPTH_MAX_M, DEPTH_MIN_M
 
 try:
     import pyrealsense2 as rs
@@ -12,6 +14,7 @@ except ImportError:
 
 class CameraThread(QThread):
     frame_pair_ready = pyqtSignal(object, object)
+    distance_info_ready = pyqtSignal(str, object)
     error = pyqtSignal(str)
 
     def __init__(self, camera_index=0, parent=None):
@@ -21,6 +24,10 @@ class CameraThread(QThread):
         self._capture = None
         self._pipeline = None
         self._align = None
+        self._depth_scale = 0.001
+        self._depth_min_m = DEPTH_MIN_M
+        self._depth_max_m = DEPTH_MAX_M
+        self._threshold_lock = threading.Lock()
 
     def start_capture(self):
         if self.isRunning():
@@ -32,6 +39,14 @@ class CameraThread(QThread):
         self._running = False
         if self.isRunning():
             self.wait(1000)
+
+    def set_depth_thresholds(self, depth_min_m: float, depth_max_m: float):
+        if depth_min_m <= 0 or depth_max_m <= 0 or depth_min_m >= depth_max_m:
+            return
+
+        with self._threshold_lock:
+            self._depth_min_m = depth_min_m
+            self._depth_max_m = depth_max_m
 
     def run(self):
         if self._start_realsense():
@@ -73,12 +88,13 @@ class CameraThread(QThread):
             read_failures = 0
             color_bgr = np.asanyarray(color_frame.get_data())
             depth_raw = np.asanyarray(depth_frame.get_data())
-            depth_8u = cv2.convertScaleAbs(depth_raw, alpha=0.03)
-            depth_colormap = cv2.applyColorMap(depth_8u, cv2.COLORMAP_TURBO)
+            depth_colormap = self._depth_to_colormap(depth_raw)
+            distance_m = self._estimate_distance(depth_raw)
 
             rgb_pixmap = self._bgr_to_qpixmap(color_bgr)
             depth_pixmap = self._bgr_to_qpixmap(depth_colormap)
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
+            self.distance_info_ready.emit("Objek Terdeteksi", distance_m)
 
     def _run_webcam_loop(self):
         read_failures = 0
@@ -95,6 +111,7 @@ class CameraThread(QThread):
             read_failures = 0
             rgb_pixmap = self._bgr_to_qpixmap(frame_bgr)
             self.frame_pair_ready.emit(rgb_pixmap, None)
+            self.distance_info_ready.emit("Depth Tidak Tersedia", None)
 
     def _open_camera(self):
         if os.name == "nt":
@@ -129,13 +146,47 @@ class CameraThread(QThread):
         config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
         config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
         try:
-            self._pipeline.start(config)
+            profile = self._pipeline.start(config)
         except RuntimeError:
             self._pipeline = None
             return False
 
         self._align = rs.align(rs.stream.color)
+        depth_sensor = profile.get_device().first_depth_sensor()
+        self._depth_scale = depth_sensor.get_depth_scale()
         return True
+
+    def _depth_to_colormap(self, depth_raw):
+        with self._threshold_lock:
+            depth_min_m = self._depth_min_m
+            depth_max_m = self._depth_max_m
+
+        depth_m = depth_raw.astype(np.float32) * self._depth_scale
+        valid_mask = (depth_m >= depth_min_m) & (depth_m <= depth_max_m)
+
+        normalized = np.zeros_like(depth_m, dtype=np.float32)
+        normalized[valid_mask] = (depth_m[valid_mask] - depth_min_m) / (depth_max_m - depth_min_m)
+
+        depth_8u = np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
+        depth_colormap = cv2.applyColorMap(depth_8u, cv2.COLORMAP_TURBO)
+        depth_colormap[~valid_mask] = (0, 0, 0)
+        return depth_colormap
+
+    def _estimate_distance(self, depth_raw):
+        depth_m = depth_raw.astype(np.float32) * self._depth_scale
+        height, width = depth_m.shape
+
+        roi_h = int(height * 0.5)
+        roi_w = int(width * 0.5)
+        y1 = (height - roi_h) // 2
+        x1 = (width - roi_w) // 2
+        roi = depth_m[y1 : y1 + roi_h, x1 : x1 + roi_w]
+
+        valid = roi[(roi > 0.10) & (roi < 10.0)]
+        if valid.size < 50:
+            return None
+
+        return float(np.percentile(valid, 5))
 
     def _bgr_to_qpixmap(self, frame_bgr):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)

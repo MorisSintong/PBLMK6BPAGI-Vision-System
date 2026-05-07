@@ -42,25 +42,32 @@ class MainWindow(QMainWindow):
         # Stretch dikurangi menjadi 20 agar panel kanan lebih ramping
         main_layout.addWidget(right_panel, stretch=20)
 
-        # ── Sambungkan sinyal GUI internal ────────────────────────────
-        self._connect_signals()
-
         # ── Kamera thread ─────────────────────────────────────────────
         self.camera_thread = CameraThread(camera_index=0, parent=self)
         self.camera_thread.frame_pair_ready.connect(self.area_kamera.update_frames)
+        self.camera_thread.distance_info_ready.connect(self.alert_panel.update_info)
         self.camera_thread.error.connect(self._on_camera_error)
+        self.camera_thread.set_depth_thresholds(
+            self.controls_panel.spin_depth_min.value(),
+            self.controls_panel.spin_depth_max.value(),
+        )
+
+        # ── Sambungkan sinyal GUI internal ────────────────────────────
+        self._connect_signals()
 
     def _connect_signals(self):
         self.controls_panel.thresholds_changed.connect(self.alert_panel.set_thresholds)
         self.controls_panel.camera_start_requested.connect(self._on_camera_start)
         self.controls_panel.camera_stop_requested.connect(self._on_camera_stop)
         self.controls_panel.view_mode_changed.connect(self.area_kamera.set_view_mode)
+        self.controls_panel.depth_threshold_changed.connect(self.camera_thread.set_depth_thresholds)
 
     def _on_camera_start(self):
         self.camera_thread.start_capture()
 
     def _on_camera_stop(self):
         self.camera_thread.stop_capture()
+        self.alert_panel.update_info("Menunggu...", None)
 
     def _on_camera_error(self, message: str):
         self.controls_panel._camera_running = False
