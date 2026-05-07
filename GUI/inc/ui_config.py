@@ -33,3 +33,7 @@ MAX_ALERT_ROWS = 10       # maximum rows shown in the alert list
 
 # ── frame display ─────────────────────────────────────────────────────────────
 DISPLAY_FPS = 30          # QTimer interval = 1000 // DISPLAY_FPS ms
+
+# ── depth visualization range (metres) ───────────────────────────────────────
+DEPTH_MIN_M = 0.30
+DEPTH_MAX_M = 5.00
