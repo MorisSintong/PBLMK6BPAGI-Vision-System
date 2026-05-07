@@ -1,24 +1,32 @@
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QDoubleSpinBox,
-    QGroupBox, QFrame
-)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QDoubleSpinBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+from ui_config import DEPTH_MAX_M, DEPTH_MIN_M, THRESHOLD_DANGER, THRESHOLD_WARNING
+
 
 class ControlsPanel(QWidget):
-    # ── Tambahkan Sinyal Baru ──
     camera_start_requested = pyqtSignal()
-    camera_stop_requested  = pyqtSignal()
-    thresholds_changed     = pyqtSignal(float, float)
-    view_mode_changed      = pyqtSignal(int) # Sinyal untuk mode layar (0, 1, atau 2)
+    camera_stop_requested = pyqtSignal()
+    thresholds_changed = pyqtSignal(float, float)
+    depth_threshold_changed = pyqtSignal(float, float)
+    view_mode_changed = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._camera_running = False
         self._build_ui()
         self._apply_style()
-        self._on_view_change(0) # Default saat aplikasi dibuka: Mode RGB (0)
+        self._on_view_change(0)
+        self._set_alert_info("Klik Apply untuk kirim threshold alert.")
+        self._set_depth_info("Klik Apply untuk kirim threshold depth.")
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -30,7 +38,6 @@ class ControlsPanel(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
 
-        # ── 1. Camera Control (TETAP SAMA SEPERTI SEBELUMNYA) ──
         cam_group = QGroupBox("📷  Kamera Intel RealSense")
         cam_group.setFont(QFont("Segoe UI", 10))
         cam_layout = QVBoxLayout(cam_group)
@@ -42,7 +49,7 @@ class ControlsPanel(QWidget):
 
         btn_row = QHBoxLayout()
         self.btn_start = QPushButton("▶  Start")
-        self.btn_stop  = QPushButton("⏹  Stop")
+        self.btn_stop = QPushButton("⏹  Stop")
         self.btn_stop.setEnabled(False)
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
@@ -51,7 +58,6 @@ class ControlsPanel(QWidget):
         cam_layout.addLayout(btn_row)
         main_layout.addWidget(cam_group)
 
-        # ── 2. View Mode Control (BARU DITAMBAHKAN) ──
         view_group = QGroupBox("📺  Pilih Tampilan")
         view_group.setFont(QFont("Segoe UI", 10))
         view_layout = QHBoxLayout(view_group)
@@ -60,7 +66,6 @@ class ControlsPanel(QWidget):
         self.btn_view_depth = QPushButton("Depth")
         self.btn_view_both = QPushButton("Overlay View")
 
-        # Hubungkan tombol ke fungsi pengubah layar
         self.btn_view_rgb.clicked.connect(lambda: self._on_view_change(0))
         self.btn_view_depth.clicked.connect(lambda: self._on_view_change(1))
         self.btn_view_both.clicked.connect(lambda: self._on_view_change(2))
@@ -70,18 +75,78 @@ class ControlsPanel(QWidget):
         view_layout.addWidget(self.btn_view_both)
         main_layout.addWidget(view_group)
 
-        # ── 3. Threshold Settings (TETAP SAMA SEPERTI SEBELUMNYA) ──
-        thr_group = QGroupBox("⚙️  Threshold Jarak (meter)")
-        # ... (Sisa kode threshold biarkan sama persis seperti file asli kamu) ...
-        # [PASTE KODE THRESHOLD KAMU DI SINI]
+        alert_group = QGroupBox("⚙️  Threshold Alert (meter)")
+        alert_group.setFont(QFont("Segoe UI", 10))
+        alert_layout = QVBoxLayout(alert_group)
 
-        # Tambahkan ke main layout
-        main_layout.addWidget(thr_group)
+        warn_row = QHBoxLayout()
+        warn_row.addWidget(QLabel("Warning:"))
+        self.spin_warning = QDoubleSpinBox()
+        self.spin_warning.setRange(0.2, 20.0)
+        self.spin_warning.setDecimals(2)
+        self.spin_warning.setSingleStep(0.1)
+        self.spin_warning.setValue(THRESHOLD_WARNING)
+        warn_row.addWidget(self.spin_warning)
+        alert_layout.addLayout(warn_row)
+
+        danger_row = QHBoxLayout()
+        danger_row.addWidget(QLabel("Danger:"))
+        self.spin_danger = QDoubleSpinBox()
+        self.spin_danger.setRange(0.1, 20.0)
+        self.spin_danger.setDecimals(2)
+        self.spin_danger.setSingleStep(0.1)
+        self.spin_danger.setValue(THRESHOLD_DANGER)
+        danger_row.addWidget(self.spin_danger)
+        alert_layout.addLayout(danger_row)
+
+        self.btn_apply_alert = QPushButton("Apply Alert Threshold")
+        self.btn_apply_alert.clicked.connect(self._on_apply_threshold)
+        alert_layout.addWidget(self.btn_apply_alert)
+
+        self.thr_info = QLabel()
+        self.thr_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thr_info.setWordWrap(True)
+        alert_layout.addWidget(self.thr_info)
+        main_layout.addWidget(alert_group)
+
+        depth_group = QGroupBox("🧭  Threshold Depth View (meter)")
+        depth_group.setFont(QFont("Segoe UI", 10))
+        depth_layout = QVBoxLayout(depth_group)
+
+        min_row = QHBoxLayout()
+        min_row.addWidget(QLabel("Depth Min:"))
+        self.spin_depth_min = QDoubleSpinBox()
+        self.spin_depth_min.setRange(0.1, 20.0)
+        self.spin_depth_min.setDecimals(2)
+        self.spin_depth_min.setSingleStep(0.1)
+        self.spin_depth_min.setValue(DEPTH_MIN_M)
+        min_row.addWidget(self.spin_depth_min)
+        depth_layout.addLayout(min_row)
+
+        max_row = QHBoxLayout()
+        max_row.addWidget(QLabel("Depth Max:"))
+        self.spin_depth_max = QDoubleSpinBox()
+        self.spin_depth_max.setRange(0.2, 20.0)
+        self.spin_depth_max.setDecimals(2)
+        self.spin_depth_max.setSingleStep(0.1)
+        self.spin_depth_max.setValue(DEPTH_MAX_M)
+        max_row.addWidget(self.spin_depth_max)
+        depth_layout.addLayout(max_row)
+
+        self.btn_apply_depth = QPushButton("Apply Depth Threshold")
+        self.btn_apply_depth.clicked.connect(self._on_apply_depth_threshold)
+        depth_layout.addWidget(self.btn_apply_depth)
+
+        self.depth_info = QLabel()
+        self.depth_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.depth_info.setWordWrap(True)
+        depth_layout.addWidget(self.depth_info)
+        main_layout.addWidget(depth_group)
         main_layout.addStretch()
 
     def _apply_style(self):
-        # ... (Sisa kode style biarkan sama persis) ...
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             QWidget       { background-color: #1e1e2e; color: #cdd6f4; }
             QGroupBox     { border: 1px solid #45475a; border-radius: 8px;
                             margin-top: 8px; padding: 8px; }
@@ -93,23 +158,18 @@ class ControlsPanel(QWidget):
             QPushButton:disabled { color: #585b70; }
             QDoubleSpinBox { background-color: #313244; border: 1px solid #45475a;
                              border-radius: 4px; padding: 3px; }
-        """)
+            """
+        )
 
-    # ── FUNGSI BARU UNTUK MENGATUR TOMBOL TAMPILAN ──
     def _on_view_change(self, mode_index):
-        # Reset semua warna tombol ke default
         default_style = "background-color: #313244; font-weight: normal; color: #cdd6f4;"
-        active_style  = "background-color: #89b4fa; color: #1e1e2e; font-weight: bold;"
+        active_style = "background-color: #89b4fa; color: #1e1e2e; font-weight: bold;"
 
         self.btn_view_rgb.setStyleSheet(active_style if mode_index == 0 else default_style)
         self.btn_view_depth.setStyleSheet(active_style if mode_index == 1 else default_style)
         self.btn_view_both.setStyleSheet(active_style if mode_index == 2 else default_style)
-
-        # Pancarkan sinyal ke main_window
         self.view_mode_changed.emit(mode_index)
-# ------------------------------------------------------------------ #
-    #  Slot handlers                                                       #
-    # ------------------------------------------------------------------ #
+
     def _on_start(self):
         self._camera_running = True
         self.btn_start.setEnabled(False)
@@ -128,15 +188,30 @@ class ControlsPanel(QWidget):
 
     def _on_apply_threshold(self):
         warning = self.spin_warning.value()
-        danger  = self.spin_danger.value()
+        danger = self.spin_danger.value()
 
-        # Validasi: danger harus < warning
         if danger >= warning:
-            self.thr_info.setText("❌ DANGER harus lebih kecil dari WARNING!")
-            self.thr_info.setStyleSheet("color: #f38ba8;")
+            self._set_alert_info("❌ DANGER harus lebih kecil dari WARNING!", is_error=True)
             return
 
-        self.thr_info.setText(f"✔ Applied: WARN={warning}m  |  DANGER={danger}m")
-        self.thr_info.setStyleSheet("color: #a6e3a1;")
+        self._set_alert_info(f"✔ Alert: WARN={warning:.2f} m | DANGER={danger:.2f} m")
         self.thresholds_changed.emit(warning, danger)
-    # ... (Sisa slot handlers seperti _on_start, _on_stop, _on_apply biarkan sama) ...
+
+    def _on_apply_depth_threshold(self):
+        depth_min = self.spin_depth_min.value()
+        depth_max = self.spin_depth_max.value()
+
+        if depth_min >= depth_max:
+            self._set_depth_info("❌ Depth Min harus lebih kecil dari Depth Max!", is_error=True)
+            return
+
+        self._set_depth_info(f"✔ Depth View: MIN={depth_min:.2f} m | MAX={depth_max:.2f} m")
+        self.depth_threshold_changed.emit(depth_min, depth_max)
+
+    def _set_alert_info(self, text: str, is_error: bool = False):
+        self.thr_info.setText(text)
+        self.thr_info.setStyleSheet("color: #f38ba8;" if is_error else "color: #a6e3a1;")
+
+    def _set_depth_info(self, text: str, is_error: bool = False):
+        self.depth_info.setText(text)
+        self.depth_info.setStyleSheet("color: #f38ba8;" if is_error else "color: #a6e3a1;")
