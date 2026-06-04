@@ -27,7 +27,7 @@ for path in SEARCH_PATHS:
 
 # ── Qt bootstrap ──────────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore    import Qt
+from PyQt6.QtCore    import Qt, QSize
 from main_window     import MainWindow
 from ui_config       import APP_NAME, WINDOW_MIN_W, WINDOW_MIN_H
 
@@ -51,7 +51,7 @@ def main() -> int:
         pass
 
     window = MainWindow()
-    window.setMinimumSize(WINDOW_MIN_W, WINDOW_MIN_H)
+    window.setMinimumSize(QSize(WINDOW_MIN_W, WINDOW_MIN_H))
     window.show()
 
     return app.exec()
