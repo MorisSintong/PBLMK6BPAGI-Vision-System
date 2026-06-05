@@ -37,13 +37,55 @@ class FrameData:
     """Struktur data tunggal yang membawa semua informasi sepanjang pipeline.
 
     Attributes:
-        rgb_frame:      Frame RGB mentah dari kamera (numpy BGR, uint8).
-        depth_frame:    Frame depth mentah dalam satuan asli kamera (uint16).
-        depth_colormap: Visualisasi depth sebagai gambar BGR berwarna.
-        depth_scale:    Faktor konversi depth_raw -> meter (default 0.001).
-        obstacles:      Daftar obstacle yang terdeteksi oleh depth stage.
-        detections:     Daftar deteksi dari YOLO stage (diisi Role 2).
-        fused_output:   Hasil fusi RGB+Depth (diisi Role 4).
+        rgb_frame:      Frame RGB/BGR dari kamera (numpy uint8, HxWx3).
+                        DIISI OLEH: CameraThread.
+
+        depth_frame:    Frame depth mentah (numpy uint16, HxW). None jika webcam.
+                        DIISI OLEH: CameraThread.
+
+        depth_colormap: Visualisasi depth sebagai BGR berwarna (numpy uint8, HxWx3).
+                        DIISI OLEH: DepthProcessingStage (R3).
+
+        depth_scale:    Faktor konversi depth_raw ke meter (default 0.001).
+
+        obstacles:      Daftar obstacle dari depth processing.
+                        DIISI OLEH: DepthProcessingStage (R3).
+                        DIKONSUMSI OLEH: FusionStage (R4).
+
+                        Format per obstacle:
+                        {
+                            "bbox":        [x, y, w, h],    # bounding box di frame
+                            "distance_m":  float,            # jarak dalam meter
+                            "zone":        "left"|"center"|"right",  # sektor horizontal
+                            "area_px":     int,              # luas kontur dalam pixel
+                        }
+
+        detections:     Daftar deteksi objek dari YOLO.
+                        DIISI OLEH: YOLODetectionStage (R2).
+                        DIKONSUMSI OLEH: FusionStage (R4).
+
+                        Format per detection:
+                        {
+                            "bbox":        [x1, y1, x2, y2],  # format xyxy
+                            "class_id":    int,                # indeks kelas COCO
+                            "class_name":  str,                # nama kelas (e.g. "person")
+                            "confidence":  float,              # 0.0 - 1.0
+                        }
+
+        fused_output:   Hasil fusi RGB+Depth.
+                        DIISI OLEH: FusionStage (R4).
+                        DIKONSUMSI OLEH: GUI Console (R6).
+
+                        Format per item:
+                        {
+                            "object_class":  str,               # nama kelas
+                            "distance_m":    float,             # jarak dalam meter
+                            "zone":          "left"|"center"|"right",
+                            "priority":      int,               # 0=tertinggi
+                            "bbox":          [x1, y1, x2, y2],
+                            "action":        str | None,        # rekomendasi aksi
+                        }
+
         metadata:       Informasi tambahan (timestamp, FPS, status).
     """
 
@@ -174,10 +216,13 @@ class DepthProcessingStage(PipelineStage):
             data.rgb_frame = annotated
 
         if detected and closest_dist is not None:
+            # Format kontrak untuk R4 — obstacle dengan zona
             data.obstacles = [
                 {
+                    "bbox": [0, 0, 0, 0],  # TODO(R3): isi bounding box asli
                     "distance_m": closest_dist,
-                    "status": "detected",
+                    "zone": "center",       # TODO(R3): hitung dari posisi x
+                    "area_px": 0,           # TODO(R3): isi luas kontur
                 }
             ]
 
@@ -194,9 +239,22 @@ class YOLODetectionStage(PipelineStage):
 
     PLACEHOLDER — akan diimplementasikan oleh Role 2 (YOLOv8 Specialist).
 
-    Kontrak input:  FrameData.rgb_frame
-    Kontrak output: FrameData.detections  (List[Dict])
-                    Format per detection: {bbox, class_id, class_name, confidence}
+    Kontrak input:   FrameData.rgb_frame (numpy BGR uint8)
+    Kontrak output:  FrameData.detections (List[Dict])
+
+    Format per detection (WAJIB):
+        {
+            "bbox":        [x1, y1, x2, y2],  # format xyxy, int
+            "class_id":    int,                # indeks kelas COCO
+            "class_name":  str,                # contoh: "person", "chair"
+            "confidence":  float,              # 0.0 sampai 1.0
+        }
+
+    Contoh output untuk frame dengan 2 objek:
+        [
+            {"bbox": [100,200,300,400], "class_id": 0, "class_name": "person", "confidence": 0.92},
+            {"bbox": [400,100,550,250], "class_id": 56, "class_name": "chair", "confidence": 0.78},
+        ]
     """
 
     def __init__(self, model_path: str = "") -> None:
@@ -219,9 +277,26 @@ class FusionStage(PipelineStage):
 
     PLACEHOLDER — akan diimplementasikan oleh Role 4 (Sensor Fusion Engineer).
 
-    Kontrak input:  FrameData.detections + FrameData.depth_frame
-    Kontrak output: FrameData.fused_output  (List[Dict])
-                    Format per item: {object_class, distance_m, zone, priority, bbox}
+    Kontrak input:   FrameData.detections (dari R2) + FrameData.obstacles (dari R3)
+                     + FrameData.depth_frame
+    Kontrak output:  FrameData.fused_output (List[Dict])
+
+    Format per item (WAJIB):
+        {
+            "object_class":  str,               # dari R2 (e.g. "person")
+            "distance_m":    float,             # dari R3 depth (meter)
+            "zone":          "left"|"center"|"right",
+            "priority":      int,               # 0 = paling bahaya (person dekat)
+            "bbox":          [x1, y1, x2, y2],  # bounding box final
+            "action":        str | None,         # "STOP", "BELOK KANAN", "BELOK KIRI", None
+        }
+
+    Aturan prioritas (WAJIB):
+        - Person dalam jarak < 1m  -> priority 0 (STOP)
+        - Obstacle dalam jarak < 1m -> priority 1
+        - Person dalam jarak < 3m  -> priority 2
+        - Lainnya                   -> priority 3+
+        - Jika tidak ada obstacle   -> list kosong []
     """
 
     def __init__(self) -> None:
