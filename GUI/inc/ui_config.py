@@ -19,21 +19,37 @@ COLOR_WARNING = "#EF9F27"
 COLOR_SAFE    = "#1D9E75"
 
 # ── overlay / bounding-box drawing ───────────────────────────────────────────
-BBOX_THICKNESS   = 2       # pixels
+BBOX_THICKNESS   = 2
 LABEL_FONT_SCALE = 0.55
 LABEL_THICKNESS  = 1
 
 # ── radar map geometry ────────────────────────────────────────────────────────
 RADAR_WIDTH_PX  = 250
 RADAR_HEIGHT_PX = 300
-RADAR_MAX_DEPTH = 8.0     # metres — farthest ring drawn on the radar
+RADAR_MAX_DEPTH = 8.0
 
 # ── alert panel ──────────────────────────────────────────────────────────────
-MAX_ALERT_ROWS = 10       # maximum rows shown in the alert list
+MAX_ALERT_ROWS = 10
 
 # ── frame display ─────────────────────────────────────────────────────────────
-DISPLAY_FPS = 30          # QTimer interval = 1000 // DISPLAY_FPS ms
+DISPLAY_FPS = 30
 
 # ── depth visualization range (metres) ───────────────────────────────────────
 DEPTH_MIN_M = 0.30
 DEPTH_MAX_M = 5.00
+
+# ── action thresholds (metres) ────────────────────────────────────────────────
+ACTION_STOP_DISTANCE     = 1.0
+ACTION_SLOWDOWN_DISTANCE = 3.0
+
+# ── zone labels ───────────────────────────────────────────────────────────────
+ZONE_LEFT   = "LEFT"
+ZONE_CENTER = "CENTER"
+ZONE_RIGHT  = "RIGHT"
+
+# ── action labels ─────────────────────────────────────────────────────────────
+ACTION_STOP       = "STOP"
+ACTION_SLOWDOWN   = "PERLAMBAT"
+ACTION_TURN_RIGHT = "BELOK KANAN"
+ACTION_TURN_LEFT  = "BELOK KIRI"
+ACTION_GO         = "LANJUT"

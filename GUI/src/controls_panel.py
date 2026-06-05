@@ -10,14 +10,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from ui_config import DEPTH_MAX_M, DEPTH_MIN_M, THRESHOLD_DANGER, THRESHOLD_WARNING
+from styles import (
+    STATUS_ACTIVE, STATUS_INACTIVE,
+    STATUS_ERROR, STATUS_SUCCESS,
+    VIEW_ACTIVE, VIEW_DEFAULT
+)
 
 
 class ControlsPanel(QWidget):
-    camera_start_requested = pyqtSignal()
-    camera_stop_requested = pyqtSignal()
-    thresholds_changed = pyqtSignal(float, float)
+    camera_start_requested  = pyqtSignal()
+    camera_stop_requested   = pyqtSignal()
+    thresholds_changed      = pyqtSignal(float, float)
     depth_threshold_changed = pyqtSignal(float, float)
-    view_mode_changed = pyqtSignal(int)
+    view_mode_changed       = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -33,12 +38,14 @@ class ControlsPanel(QWidget):
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(12)
 
-        title = QLabel("🎛️  Controls Panel")
+        # ── Judul ─────────────────────────────────────────────────────
+        title = QLabel("Controls Panel")
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
 
-        cam_group = QGroupBox("📷  Kamera Intel RealSense")
+        # ── Kamera ────────────────────────────────────────────────────
+        cam_group = QGroupBox("Kamera Intel RealSense")
         cam_group.setFont(QFont("Segoe UI", 10))
         cam_layout = QVBoxLayout(cam_group)
 
@@ -48,8 +55,8 @@ class ControlsPanel(QWidget):
         cam_layout.addWidget(self.camera_status_label)
 
         btn_row = QHBoxLayout()
-        self.btn_start = QPushButton("▶  Start")
-        self.btn_stop = QPushButton("⏹  Stop")
+        self.btn_start = QPushButton("Start")
+        self.btn_stop  = QPushButton("Stop")
         self.btn_stop.setEnabled(False)
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
@@ -58,13 +65,14 @@ class ControlsPanel(QWidget):
         cam_layout.addLayout(btn_row)
         main_layout.addWidget(cam_group)
 
-        view_group = QGroupBox("📺  Pilih Tampilan")
+        # ── Pilih Tampilan ────────────────────────────────────────────
+        view_group = QGroupBox("Pilih Tampilan")
         view_group.setFont(QFont("Segoe UI", 10))
         view_layout = QHBoxLayout(view_group)
 
-        self.btn_view_rgb = QPushButton("RGB")
+        self.btn_view_rgb   = QPushButton("RGB")
         self.btn_view_depth = QPushButton("Depth")
-        self.btn_view_both = QPushButton("Overlay View")
+        self.btn_view_both  = QPushButton("Overlay View")
 
         self.btn_view_rgb.clicked.connect(lambda: self._on_view_change(0))
         self.btn_view_depth.clicked.connect(lambda: self._on_view_change(1))
@@ -75,7 +83,8 @@ class ControlsPanel(QWidget):
         view_layout.addWidget(self.btn_view_both)
         main_layout.addWidget(view_group)
 
-        alert_group = QGroupBox("⚙️  Threshold Alert (meter)")
+        # ── Threshold Alert ───────────────────────────────────────────
+        alert_group = QGroupBox("Threshold Alert (meter)")
         alert_group.setFont(QFont("Segoe UI", 10))
         alert_layout = QVBoxLayout(alert_group)
 
@@ -109,7 +118,8 @@ class ControlsPanel(QWidget):
         alert_layout.addWidget(self.thr_info)
         main_layout.addWidget(alert_group)
 
-        depth_group = QGroupBox("🧭  Threshold Depth View (meter)")
+        # ── Threshold Depth View ──────────────────────────────────────
+        depth_group = QGroupBox("Threshold Depth View (meter)")
         depth_group.setFont(QFont("Segoe UI", 10))
         depth_layout = QVBoxLayout(depth_group)
 
@@ -145,56 +155,40 @@ class ControlsPanel(QWidget):
         main_layout.addStretch()
 
     def _apply_style(self):
-        self.setStyleSheet(
-            """
-            QWidget       { background-color: #1e1e2e; color: #cdd6f4; }
-            QGroupBox     { border: 1px solid #45475a; border-radius: 8px;
-                            margin-top: 8px; padding: 8px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px;
-                               color: #89b4fa; }
-            QPushButton   { background-color: #313244; border: 1px solid #45475a;
-                            border-radius: 6px; padding: 6px 14px; }
-            QPushButton:hover   { background-color: #45475a; }
-            QPushButton:disabled { color: #585b70; }
-            QDoubleSpinBox { background-color: #313244; border: 1px solid #45475a;
-                             border-radius: 4px; padding: 3px; }
-            """
-        )
+        from styles import GLOBAL_STYLESHEET
+        self.setStyleSheet(GLOBAL_STYLESHEET)
 
     def _on_view_change(self, mode_index):
-        default_style = "background-color: #313244; font-weight: normal; color: #cdd6f4;"
-        active_style = "background-color: #89b4fa; color: #1e1e2e; font-weight: bold;"
-
-        self.btn_view_rgb.setStyleSheet(active_style if mode_index == 0 else default_style)
-        self.btn_view_depth.setStyleSheet(active_style if mode_index == 1 else default_style)
-        self.btn_view_both.setStyleSheet(active_style if mode_index == 2 else default_style)
+        self.btn_view_rgb.setStyleSheet(VIEW_ACTIVE   if mode_index == 0 else VIEW_DEFAULT)
+        self.btn_view_depth.setStyleSheet(VIEW_ACTIVE if mode_index == 1 else VIEW_DEFAULT)
+        self.btn_view_both.setStyleSheet(VIEW_ACTIVE  if mode_index == 2 else VIEW_DEFAULT)
         self.view_mode_changed.emit(mode_index)
 
     def _on_start(self):
         self._camera_running = True
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
-        self.camera_status_label.setText("Status: ✅ Aktif")
-        self.camera_status_label.setStyleSheet("color: #a6e3a1;")
+        self.camera_status_label.setText("Status: Aktif")
+        self.camera_status_label.setStyleSheet(STATUS_ACTIVE)
         self.camera_start_requested.emit()
 
     def _on_stop(self):
         self._camera_running = False
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
-        self.camera_status_label.setText("Status: ⛔ Tidak Aktif")
-        self.camera_status_label.setStyleSheet("color: #f38ba8;")
+        self.camera_status_label.setText("Status: Tidak Aktif")
+        self.camera_status_label.setStyleSheet(STATUS_INACTIVE)
         self.camera_stop_requested.emit()
 
     def _on_apply_threshold(self):
         warning = self.spin_warning.value()
-        danger = self.spin_danger.value()
+        danger  = self.spin_danger.value()
 
         if danger >= warning:
-            self._set_alert_info("❌ DANGER harus lebih kecil dari WARNING!", is_error=True)
+            self._set_alert_info("DANGER harus lebih kecil dari WARNING!", is_error=True)
             return
 
-        self._set_alert_info(f"✔ Alert: WARN={warning:.2f} m | DANGER={danger:.2f} m")
+        self._set_alert_info(f"Alert: WARN={warning:.2f} m | DANGER={danger:.2f} m")
         self.thresholds_changed.emit(warning, danger)
 
     def _on_apply_depth_threshold(self):
@@ -202,16 +196,16 @@ class ControlsPanel(QWidget):
         depth_max = self.spin_depth_max.value()
 
         if depth_min >= depth_max:
-            self._set_depth_info("❌ Depth Min harus lebih kecil dari Depth Max!", is_error=True)
+            self._set_depth_info("Depth Min harus lebih kecil dari Depth Max!", is_error=True)
             return
 
-        self._set_depth_info(f"✔ Depth View: MIN={depth_min:.2f} m | MAX={depth_max:.2f} m")
+        self._set_depth_info(f"Depth View: MIN={depth_min:.2f} m | MAX={depth_max:.2f} m")
         self.depth_threshold_changed.emit(depth_min, depth_max)
 
     def _set_alert_info(self, text: str, is_error: bool = False):
         self.thr_info.setText(text)
-        self.thr_info.setStyleSheet("color: #f38ba8;" if is_error else "color: #a6e3a1;")
+        self.thr_info.setStyleSheet(STATUS_ERROR if is_error else STATUS_SUCCESS)
 
     def _set_depth_info(self, text: str, is_error: bool = False):
         self.depth_info.setText(text)
-        self.depth_info.setStyleSheet("color: #f38ba8;" if is_error else "color: #a6e3a1;")
+        self.depth_info.setStyleSheet(STATUS_ERROR if is_error else STATUS_SUCCESS)
