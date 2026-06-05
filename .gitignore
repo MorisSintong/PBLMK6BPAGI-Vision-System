@@ -76,3 +76,5 @@ __pycache__/
 *.pyo
 *.pyd
 .zed/
+Doc/texDoc/teamRoles/
+Doc/texDoc/
