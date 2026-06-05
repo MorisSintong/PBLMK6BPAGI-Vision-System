@@ -1,4 +1,4 @@
-import pyrealsense2 as rs
+import pyrealsense2 as rs  # type: ignore[import-untyped]
 import numpy as np
 import cv2
 import os
@@ -6,8 +6,8 @@ import datetime
 
 class FrameRecorder:
     def __init__(self, save_path="data/recordings"):
-        self.pipeline = rs.pipeline()
-        self.config = rs.config()
+        self.pipeline = rs.pipeline()  # type: ignore[union-attr]
+        self.config = rs.config()  # type: ignore[union-attr]
 
         # Enable stream RGB dan Depth dari RealSense
         self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)

@@ -6,4 +6,6 @@
   "venv": "depth-obstacle-detector",
   "extraPaths": [".", "./GUI/src", "./GUI/inc", "./Vision/src", "./Vision/inc"],
   "typeCheckingMode": "standard",
+  "reportMissingModuleSource": false,
+  "reportMissingTypeStubs": false,
 }

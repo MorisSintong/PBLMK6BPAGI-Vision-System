@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from frame_processor import FrameProcessor
 
 try:
-    import pyrealsense2 as rs
+    import pyrealsense2 as rs  # type: ignore[import-untyped]
 except ImportError:
     rs = None
 
@@ -185,17 +185,17 @@ class CameraThread(QThread):
         if rs is None:
             return False
 
-        self._pipeline = rs.pipeline()
-        config = rs.config()
-        config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-        config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        self._pipeline = rs.pipeline()  # type: ignore[union-attr]
+        config = rs.config()  # type: ignore[union-attr]
+        config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)  # type: ignore[union-attr]
+        config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)  # type: ignore[union-attr]
         try:
             profile = self._pipeline.start(config)
         except RuntimeError:
             self._pipeline = None
             return False
 
-        self._align = rs.align(rs.stream.color)
+        self._align = rs.align(rs.stream.color)  # type: ignore[union-attr]
         depth_sensor = profile.get_device().first_depth_sensor()
         self._depth_scale = depth_sensor.get_depth_scale()
         return True
