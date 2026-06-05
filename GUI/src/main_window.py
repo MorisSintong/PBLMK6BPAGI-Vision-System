@@ -4,6 +4,8 @@ from Alert_panel import AlertPanel
 from camera_thread import CameraThread
 from controls_panel import ControlsPanel
 from depth_view import DepthView
+from detection_config import DetectionConfig
+from frame_processor import FrameProcessor
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
 
@@ -24,10 +26,9 @@ class MainWindow(QMainWindow):
 
         # ── Bagian Kiri: Camera View ──────────────────────────────────
         self.area_kamera = DepthView()
-        # Stretch ditingkatkan menjadi 80 agar lebih lebar
         main_layout.addWidget(self.area_kamera, stretch=80)
 
-        # ── Bagian Kanan: Controls + Alert (Tanpa Tab) ────────────────
+        # ── Bagian Kanan: Controls + Alert ────────────────────────────
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(6, 6, 6, 6)
@@ -39,11 +40,18 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.controls_panel, stretch=40)
         right_layout.addWidget(self.alert_panel, stretch=60)
 
-        # Stretch dikurangi menjadi 20 agar panel kanan lebih ramping
         main_layout.addWidget(right_panel, stretch=20)
 
-        # ── Kamera thread ─────────────────────────────────────────────
-        self.camera_thread = CameraThread(camera_index=0, parent=self)
+        # ── Vision pipeline ───────────────────────────────────────────
+        config = DetectionConfig()
+        self.frame_processor = FrameProcessor(config)
+
+        # ── Kamera thread (dengan pipeline processor) ─────────────────
+        self.camera_thread = CameraThread(
+            camera_index=0,
+            parent=self,
+            processor=self.frame_processor,
+        )
         self.camera_thread.frame_pair_ready.connect(self.area_kamera.update_frames)
         self.camera_thread.distance_info_ready.connect(self.alert_panel.update_info)
         self.camera_thread.error.connect(self._on_camera_error)
@@ -60,7 +68,9 @@ class MainWindow(QMainWindow):
         self.controls_panel.camera_start_requested.connect(self._on_camera_start)
         self.controls_panel.camera_stop_requested.connect(self._on_camera_stop)
         self.controls_panel.view_mode_changed.connect(self.area_kamera.set_view_mode)
-        self.controls_panel.depth_threshold_changed.connect(self.camera_thread.set_depth_thresholds)
+        self.controls_panel.depth_threshold_changed.connect(
+            self.camera_thread.set_depth_thresholds
+        )
 
     def _on_camera_start(self):
         self.camera_thread.start_capture()

@@ -1,10 +1,15 @@
-import cv2
 import os
 import threading
+from typing import TYPE_CHECKING, Optional
+
+import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from ui_config import DEPTH_MAX_M, DEPTH_MIN_M
+
+if TYPE_CHECKING:
+    from frame_processor import FrameProcessor
 
 try:
     import pyrealsense2 as rs
@@ -17,7 +22,9 @@ class CameraThread(QThread):
     distance_info_ready = pyqtSignal(str, object)
     error = pyqtSignal(str)
 
-    def __init__(self, camera_index=0, parent=None):
+    def __init__(
+        self, camera_index=0, parent=None, processor: "Optional[FrameProcessor]" = None
+    ):
         super().__init__(parent)
         self.camera_index = camera_index
         self._running = False
@@ -28,6 +35,7 @@ class CameraThread(QThread):
         self._depth_min_m = DEPTH_MIN_M
         self._depth_max_m = DEPTH_MAX_M
         self._threshold_lock = threading.Lock()
+        self._processor = processor
 
     def start_capture(self):
         if self.isRunning():
@@ -48,13 +56,18 @@ class CameraThread(QThread):
             self._depth_min_m = depth_min_m
             self._depth_max_m = depth_max_m
 
+        if self._processor is not None:
+            self._processor.set_depth_thresholds(depth_min_m, depth_max_m)
+
     def run(self):
         if self._start_realsense():
             self._run_realsense_loop()
         else:
             self._capture = self._open_camera()
             if self._capture is None:
-                self.error.emit("Kamera gagal dibuka. Tutup aplikasi lain yang sedang memakai kamera.")
+                self.error.emit(
+                    "Kamera gagal dibuka. Tutup aplikasi lain yang sedang memakai kamera."
+                )
                 self._release_resources()
                 return
             self._run_webcam_loop()
@@ -88,13 +101,37 @@ class CameraThread(QThread):
             read_failures = 0
             color_bgr = np.asanyarray(color_frame.get_data())
             depth_raw = np.asanyarray(depth_frame.get_data())
-            depth_colormap = self._depth_to_colormap(depth_raw)
-            distance_m = self._estimate_distance(depth_raw)
 
-            rgb_pixmap = self._bgr_to_qpixmap(color_bgr)
-            depth_pixmap = self._bgr_to_qpixmap(depth_colormap)
+            if self._processor is not None:
+                # ── Pipeline path: delegasikan ke FrameProcessor ──
+                result = self._processor.process(
+                    color_bgr, depth_raw, self._depth_scale
+                )
+                rgb_pixmap = self._bgr_to_qpixmap(result.rgb_frame)
+                depth_pixmap = self._bgr_to_qpixmap(
+                    result.depth_colormap
+                    if result.depth_colormap is not None
+                    else np.zeros_like(color_bgr)
+                )
+
+                # Ekstrak informasi obstacle dari hasil pipeline
+                if result.obstacles:
+                    dist = result.obstacles[0].get("distance_m")
+                    label = "Objek Terdeteksi"
+                else:
+                    dist = None
+                    label = "Clear"
+            else:
+                # ── Legacy path: processing manual (fallback) ──
+                depth_colormap = self._depth_to_colormap(depth_raw)
+                distance_m = self._estimate_distance(depth_raw)
+                rgb_pixmap = self._bgr_to_qpixmap(color_bgr)
+                depth_pixmap = self._bgr_to_qpixmap(depth_colormap)
+                label = "Objek Terdeteksi"
+                dist = distance_m
+
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
-            self.distance_info_ready.emit("Objek Terdeteksi", distance_m)
+            self.distance_info_ready.emit(label, dist)
 
     def _run_webcam_loop(self):
         read_failures = 0
@@ -109,7 +146,14 @@ class CameraThread(QThread):
                 continue
 
             read_failures = 0
-            rgb_pixmap = self._bgr_to_qpixmap(frame_bgr)
+
+            if self._processor is not None:
+                # Pipeline path (RGB only, no depth)
+                result = self._processor.process(frame_bgr, None)
+                rgb_pixmap = self._bgr_to_qpixmap(result.rgb_frame)
+            else:
+                rgb_pixmap = self._bgr_to_qpixmap(frame_bgr)
+
             self.frame_pair_ready.emit(rgb_pixmap, None)
             self.distance_info_ready.emit("Depth Tidak Tersedia", None)
 
@@ -165,7 +209,9 @@ class CameraThread(QThread):
         valid_mask = (depth_m >= depth_min_m) & (depth_m <= depth_max_m)
 
         normalized = np.zeros_like(depth_m, dtype=np.float32)
-        normalized[valid_mask] = (depth_m[valid_mask] - depth_min_m) / (depth_max_m - depth_min_m)
+        normalized[valid_mask] = (depth_m[valid_mask] - depth_min_m) / (
+            depth_max_m - depth_min_m
+        )
 
         depth_8u = np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
         depth_colormap = cv2.applyColorMap(depth_8u, cv2.COLORMAP_TURBO)
