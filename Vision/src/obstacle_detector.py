@@ -72,6 +72,7 @@ class ObstacleDetector:
 
         obstacle_detected = False
         closest_distance = None
+        detections = []
 
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -83,9 +84,19 @@ class ObstacleDetector:
 
             x, y, w, h = cv2.boundingRect(contour)
 
-            # Posisi bounding box dikembalikan ke koordinat frame asli
+            # Posisi bounding box dikembalikan ke koordinat frame asli (DULU)
             real_x = x + x1
             real_y = y + y1
+
+            # Baru hitung zona (SETELAH real_x ada)
+            center_x = real_x + (w // 2)
+
+            if center_x < width // 3:
+                zone = "left"
+            elif center_x < 2 * (width // 3):
+                zone = "center"
+            else:
+                zone = "right"
 
             object_depth = depth_meter[y:y+h, x:x+w]
             valid_depth = object_depth[
@@ -96,10 +107,22 @@ class ObstacleDetector:
             if valid_depth.size > 0:
                 distance = float(np.min(valid_depth))
 
+                # Hitung prioritas
+                priority = round(1 / distance, 2)
+
                 if closest_distance is None or distance < closest_distance:
                     closest_distance = distance
 
-                label = f"Obstacle: {distance:.2f} m"
+                # Tambah info objek ke list
+                detections.append({
+                    "object_class": "obstacle",
+                    "distance_m": distance,
+                    "zone": zone,
+                    "priority": priority,
+                    "bbox": (real_x, real_y, w, h)
+                })
+
+                label = f"Obstacle: {distance:.2f} m | {zone} | P:{priority}"
             else:
                 label = "Obstacle"
 
@@ -147,4 +170,5 @@ class ObstacleDetector:
             2
         )
 
-        return annotated_frame, obstacle_detected, closest_distance
+        return annotated_frame, obstacle_detected, closest_distance, detections
+    
