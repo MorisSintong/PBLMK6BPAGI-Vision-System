@@ -1,65 +1,110 @@
+# GUI/src/radar_view.py
+
 import math
-import random
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QTimer, QPointF, QRect
-from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QConicalGradient, QRadialGradient, QPainterPath
+from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF
+from PyQt6.QtGui import (
+    QPainter, QPen, QBrush, QColor, QFont, QConicalGradient
+)
 
-# Warna Palette HUD
-GREEN   = QColor(0,  255, 100)
-BG_DARK = QColor(0,   12,  24, 215)
-BORDER  = QColor(0,  200, 255, 200)
+from ui_config import RADAR_MAX_DEPTH, RADAR_WIDTH_PX, RADAR_HEIGHT_PX
+from styles import (
+    RADAR_BG, RADAR_BORDER, RADAR_SWEEP,
+    RADAR_LABEL_MUTED, RADAR_BLIP_CENTER,
+    RADAR_BLIP_SIDE, RADAR_BLIP_SAFE
+)
 
-def mf(size: int, bold: bool = False) -> QFont:
-    return QFont("Courier New", size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
 
 class RadarView(QWidget):
-    SIZE = 250 # Ukuran widget diperbesar sedikit agar lebih jelas
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(self.SIZE, self.SIZE)
-        
-        self._sweep = 0.0
-        rng = random.Random()
-        # Membuat titik blip [angle_deg, dist_fraction, alpha]
-        self._blips = [[rng.uniform(0, 360), rng.uniform(0.15, 0.90), 0] for _ in range(6)]
-        
-        # Timer untuk memutar radar
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._tick)
-        self.timer.start(45)
+        self.setFixedSize(RADAR_WIDTH_PX, RADAR_HEIGHT_PX)
 
-    def _tick(self):
-        self._sweep = (self._sweep + 4) % 360
-        for b in self._blips:
-            if (self._sweep - b[0]) % 360 < 5:
-                b[2] = 255
-            else:
-                b[2] = max(0, b[2] - 5)
+        # Data obstacle — diisi dari luar saat pipeline sudah siap
+        self._obstacles = []
+
+        # Sweep angle
+        self._sweep = 0.0
+
+        # Timer sweep
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(40)
+
+    # ------------------------------------------------------------------ #
+    #  Public API                                                          #
+    # ------------------------------------------------------------------ #
+    def update_obstacles(self, obstacles: list):
+        """
+        Menerima data obstacle dari pipeline.
+
+        Parameters:
+            obstacles: list of dict {
+                'angle_deg'  : float,
+                'distance_m' : float,
+                'zone'       : str — 'LEFT', 'CENTER', 'RIGHT'
+            }
+        """
+        self._obstacles = obstacles
         self.update()
 
+    def clear_obstacles(self):
+        """Reset radar — dipanggil saat kamera stop."""
+        self._obstacles = []
+        self.update()
+
+    # ------------------------------------------------------------------ #
+    #  Internal                                                            #
+    # ------------------------------------------------------------------ #
+    def _tick(self):
+        self._sweep = (self._sweep + 3) % 360
+        self.update()
+
+    # ------------------------------------------------------------------ #
+    #  Paint                                                               #
+    # ------------------------------------------------------------------ #
     def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # 1. Menggambar Background "Kaca" (GlassPanel)
-        p.setPen(QPen(QColor(0, 230, 90, 225), 1))
-        p.setBrush(QBrush(QColor(0, 7, 3, 235)))
-        p.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 8, 8)
 
-        w, h = self.width(), self.height()
-        cx, cy = w / 2, h / 2
-        r = min(cx, cy) - 20
+        w, h   = self.width(), self.height()
+        cx, cy = w / 2, (h - 30) / 2 + 10
+        r      = min(cx, cy) - 20
 
-        # 2. Menggambar Cincin Radar
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for i in range(1, 5):
-            p.setPen(QPen(QColor(0, 210, 80, 60 + i * 25), 1))
-            p.drawEllipse(QPointF(cx, cy), r * i / 4, r * i / 4)
+        # ── 1. Background ─────────────────────────────────────────────
+        p.setPen(QPen(QColor(RADAR_BORDER), 1))
+        p.setBrush(QBrush(QColor(RADAR_BG)))
+        p.drawRoundedRect(0, 0, w, h, 12, 12)
 
-        # 3. Menggambar Garis Silang (Sumbu)
-        p.setPen(QPen(QColor(0, 180, 70, 100), 1))
+        # ── 2. Title ──────────────────────────────────────────────────
+        p.setPen(QPen(QColor(RADAR_SWEEP)))
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        p.drawText(
+            QRectF(0, 8, w, 20),
+            Qt.AlignmentFlag.AlignCenter,
+            "RADAR VIEW"
+        )
+
+        # ── 3. Cincin Jarak ───────────────────────────────────────────
+        rings = 4
+        for i in range(1, rings + 1):
+            p.setPen(QPen(QColor(RADAR_BORDER), 0.8))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            ri = r * i / rings
+            p.drawEllipse(QPointF(cx, cy), ri, ri)
+
+            dist_label = f"{int(RADAR_MAX_DEPTH * i / rings)}m"
+            p.setPen(QPen(QColor(RADAR_LABEL_MUTED)))
+            p.setFont(QFont("Segoe UI", 7))
+            p.drawText(
+                QRectF(cx + 3, cy - ri - 10, 20, 12),
+                Qt.AlignmentFlag.AlignLeft,
+                dist_label
+            )
+
+        # ── 4. Garis Silang ───────────────────────────────────────────
+        p.setPen(QPen(QColor(RADAR_BORDER), 0.8))
         for deg in range(0, 180, 45):
             rad = math.radians(deg)
             p.drawLine(
@@ -67,45 +112,83 @@ class RadarView(QWidget):
                 QPointF(cx + r * math.cos(rad), cy + r * math.sin(rad))
             )
 
-        # 4. Menggambar Sapuan Cahaya Radar (Sweep Cone)
+        # ── 5. Zona LEFT / CENTER / RIGHT ─────────────────────────────
+        for zone_angle in [-30, 30]:
+            rad = math.radians(90 - zone_angle)
+            p.setPen(QPen(QColor(RADAR_BORDER), 0.8,
+                          Qt.PenStyle.DashLine))
+            p.drawLine(
+                QPointF(cx, cy),
+                QPointF(cx + r * math.cos(rad), cy - r * math.sin(rad))
+            )
+
+        zone_y = cy + r + 14
+        p.setFont(QFont("Segoe UI", 8))
+        p.setPen(QPen(QColor(RADAR_LABEL_MUTED)))
+        p.drawText(QRectF(cx - r - 10, zone_y, r - 5, 14),
+                   Qt.AlignmentFlag.AlignCenter, "LEFT")
+        p.drawText(QRectF(cx - 20, zone_y, 40, 14),
+                   Qt.AlignmentFlag.AlignCenter, "CENTER")
+        p.drawText(QRectF(cx + 10, zone_y, r - 5, 14),
+                   Qt.AlignmentFlag.AlignCenter, "RIGHT")
+
+        # ── 6. Sweep Cone ─────────────────────────────────────────────
         sg = QConicalGradient(QPointF(cx, cy), 90 - self._sweep)
-        sg.setColorAt(0.00, QColor(0, 255, 80, 175))
-        sg.setColorAt(0.10, QColor(0, 255, 80, 20))
-        sg.setColorAt(0.11, Qt.GlobalColor.transparent)
+        sg.setColorAt(0.00, QColor(137, 180, 250, 120))
+        sg.setColorAt(0.12, QColor(137, 180, 250, 15))
+        sg.setColorAt(0.13, Qt.GlobalColor.transparent)
         sg.setColorAt(1.00, Qt.GlobalColor.transparent)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(sg))
         p.drawEllipse(QPointF(cx, cy), r, r)
 
-        # Garis sapuan tegas
+        # Garis sweep
         sr = math.radians(90 - self._sweep)
-        p.setPen(QPen(QColor(0, 255, 100), 2))
-        p.drawLine(QPointF(cx, cy), QPointF(cx + r * math.cos(sr), cy - r * math.sin(sr)))
+        p.setPen(QPen(QColor(RADAR_SWEEP), 1.5))
+        p.drawLine(
+            QPointF(cx, cy),
+            QPointF(cx + r * math.cos(sr), cy - r * math.sin(sr))
+        )
 
-        # 5. Menggambar Titik Halangan (Blips)
-        for b in self._blips:
-            if b[2] > 8:
-                br = math.radians(90 - b[0])
-                bx = cx + b[1] * r * math.cos(br)
-                by = cy - b[1] * r * math.sin(br)
-                glow = QRadialGradient(QPointF(bx, by), 13)
-                glow.setColorAt(0, QColor(0, 255, 80, int(b[2])))
-                glow.setColorAt(1, Qt.GlobalColor.transparent)
-                p.setBrush(QBrush(glow))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.drawEllipse(QPointF(bx, by), 13, 13)
-                p.setBrush(QBrush(QColor(140, 255, 170, int(b[2]))))
-                p.drawEllipse(QPointF(bx, by), 3.5, 3.5)
-
-        # 6. Menggambar Cincin Luar & Label
-        p.setPen(QPen(QColor(0, 230, 90, 225), 2))
+        # ── 7. Cincin Luar ────────────────────────────────────────────
+        p.setPen(QPen(QColor(RADAR_SWEEP), 1.2))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(cx, cy), r, r)
-        p.setBrush(QBrush(GREEN))
+
+        # ── 8. Titik Pusat ────────────────────────────────────────────
         p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(RADAR_SWEEP)))
         p.drawEllipse(QPointF(cx, cy), 3, 3)
 
-        p.setPen(QPen(QColor(0, 220, 80)))
-        p.setFont(mf(8))
-        p.drawText(QRect(0, int(h - 20), int(w), 14), Qt.AlignmentFlag.AlignCenter, "━  RADAR  ━")
+        # ── 9. Obstacle Blips (dari data nyata) ───────────────────────
+        for obs in self._obstacles:
+            angle_deg  = obs.get("angle_deg", 0)
+            distance_m = obs.get("distance_m", 0)
+            zone       = obs.get("zone", "CENTER")
+
+            dist_frac = min(distance_m / RADAR_MAX_DEPTH, 1.0)
+            brad = math.radians(90 - angle_deg)
+            bx = cx + dist_frac * r * math.cos(brad)
+            by = cy - dist_frac * r * math.sin(brad)
+
+            if zone == "CENTER":
+                color = QColor(RADAR_BLIP_CENTER)
+            elif zone in ("LEFT", "RIGHT"):
+                color = QColor(RADAR_BLIP_SIDE)
+            else:
+                color = QColor(RADAR_BLIP_SAFE)
+
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(color))
+            p.drawEllipse(QPointF(bx, by), 5, 5)
+
+        # ── 10. Bottom label ──────────────────────────────────────────
+        p.setPen(QPen(QColor(RADAR_LABEL_MUTED)))
+        p.setFont(QFont("Segoe UI", 7))
+        p.drawText(
+            QRectF(0, h - 16, w, 14),
+            Qt.AlignmentFlag.AlignCenter,
+            "Intel RealSense D455"
+        )
+
         p.end()
