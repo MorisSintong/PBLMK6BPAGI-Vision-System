@@ -119,7 +119,7 @@ class ObstacleDetector:
                     "distance_m": distance,
                     "zone": zone,
                     "priority": priority,
-                    "bbox": (real_x, real_y, w, h)
+                    "bbox": [real_x, real_y, w, h]
                 })
 
                 label = f"Obstacle: {distance:.2f} m | {zone} | P:{priority}"
@@ -170,5 +170,5 @@ class ObstacleDetector:
             2
         )
 
-        return annotated_frame, obstacle_detected, closest_distance, detections
+        return annotated_frame, obstacle_detected, closest_distance
     
