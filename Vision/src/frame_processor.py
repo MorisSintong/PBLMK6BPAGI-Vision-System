@@ -157,12 +157,7 @@ class PipelineStage(ABC):
 
 
 class DepthProcessingStage(PipelineStage):
-    """Stage pemrosesan depth: colormap + obstacle detection.
-
-    Menggunakan ObstacleDetector yang sudah ada.
-    Logika depth-to-colormap direplikasi dari CameraThread._depth_to_colormap()
-    agar pipeline self-contained (tidak bergantung pada CameraThread).
-    """
+    """Stage pemrosesan depth: colormap (Merah/Kuning/Hijau) + multi-zone detection."""
 
     def __init__(
         self,
@@ -174,13 +169,16 @@ class DepthProcessingStage(PipelineStage):
         self._config = config
         self._depth_min_m = depth_min_m
         self._depth_max_m = depth_max_m
+        
+        # Threshold bahaya untuk pewarnaan dan navigasi
+        self.danger_threshold = 1.0
+        self.warning_threshold = 3.0
 
-        # Gunakan ObstacleDetector yang sudah ada
+        # Gunakan ObstacleDetector yang baru
         self._detector = ObstacleDetector(
             max_distance_m=depth_max_m,
-            min_distance_m=config.min_distance,
+            min_distance_m=depth_min_m,
             min_area=800,
-            roi_ratio=0.7,
         )
 
     def set_thresholds(self, depth_min_m: float, depth_max_m: float) -> None:
@@ -195,36 +193,34 @@ class DepthProcessingStage(PipelineStage):
         if not data.has_depth():
             return data
 
-        # 1. Depth colormap (replikasi logika CameraThread)
         depth_m = data.depth_frame.astype(np.float32) * data.depth_scale
+        height, width = depth_m.shape
+        
+        # 1. Depth Colormap dengan warna zona bahaya (Merah, Kuning, Hijau)
+        depth_colormap = np.zeros((height, width, 3), dtype=np.uint8)
+        
         valid_mask = (depth_m >= self._depth_min_m) & (depth_m <= self._depth_max_m)
-
-        normalized = np.zeros_like(depth_m, dtype=np.float32)
-        normalized[valid_mask] = (depth_m[valid_mask] - self._depth_min_m) / (
-            self._depth_max_m - self._depth_min_m
-        )
-        depth_8u = np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
-        data.depth_colormap = cv2.applyColorMap(depth_8u, cv2.COLORMAP_TURBO)
-        data.depth_colormap[~valid_mask] = (0, 0, 0)
+        danger_mask = valid_mask & (depth_m < self.danger_threshold)
+        warning_mask = valid_mask & (depth_m >= self.danger_threshold) & (depth_m < self.warning_threshold)
+        safe_mask = valid_mask & (depth_m >= self.warning_threshold)
+        
+        depth_colormap[danger_mask] = (0, 0, 255)    # Merah
+        depth_colormap[warning_mask] = (0, 255, 255) # Kuning
+        depth_colormap[safe_mask] = (0, 255, 0)      # Hijau
+        
+        data.depth_colormap = depth_colormap
 
         # 2. Obstacle detection
-        annotated, detected, closest_dist = self._detector.detect(
-            data.rgb_frame, data.depth_frame, data.depth_scale
+        annotated, obstacles_list = self._detector.detect(
+            data.rgb_frame, data.depth_frame, data.depth_scale,
+            self.danger_threshold, self.warning_threshold
         )
 
         if annotated is not None:
             data.rgb_frame = annotated
 
-        if detected and closest_dist is not None:
-            # Format kontrak untuk R4 — obstacle dengan zona
-            data.obstacles = [
-                {
-                    "bbox": [0, 0, 0, 0],  # TODO(R3): isi bounding box asli
-                    "distance_m": closest_dist,
-                    "zone": "center",       # TODO(R3): hitung dari posisi x
-                    "area_px": 0,           # TODO(R3): isi luas kontur
-                }
-            ]
+        # Menghapus label "TODO(R3)" dan mengisi data asli dari detektor!
+        data.obstacles = obstacles_list
 
         return data
 
