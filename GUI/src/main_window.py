@@ -1,6 +1,6 @@
 import sys
 
-from Alert_panel import AlertPanel
+from alert_panel import AlertPanel
 from camera_thread import CameraThread
 from controls_panel import ControlsPanel
 from depth_view import DepthView

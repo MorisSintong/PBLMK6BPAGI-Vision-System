@@ -4,6 +4,11 @@ import cv2
 import os
 import datetime
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
 class FrameRecorder:
     def __init__(self, save_path="data/recordings"):
         self.pipeline = rs.pipeline()  # type: ignore[union-attr]
@@ -23,10 +28,10 @@ class FrameRecorder:
         try:
             self.pipeline.start(self.config)
             self.pipeline_started = True
-            print("RealSense camera aktif. Tekan 'q' untuk berhenti.")
+            logger.info("RealSense camera aktif. Tekan 'q' untuk berhenti.")
             return True
         except Exception as e:
-            print(f"Error: RealSense tidak terdeteksi! {e}")
+            logger.error(f"RealSense tidak terdeteksi: {e}")
             return False
 
     def get_frames(self):
@@ -37,7 +42,11 @@ class FrameRecorder:
         if not self.pipeline_started:
             return None, None
 
-        frames = self.pipeline.wait_for_frames()
+        try:
+            frames = self.pipeline.wait_for_frames(timeout_ms=1000)
+        except RuntimeError as e:
+            logger.error(f"Error reading frames: {e}")
+            return None, None
 
         color_frame = frames.get_color_frame()
         depth_frame = frames.get_depth_frame()
@@ -54,7 +63,7 @@ class FrameRecorder:
         if self.pipeline_started:
             self.pipeline.stop()
             self.pipeline_started = False
-        print("RealSense dimatikan.")
+        logger.info("RealSense dimatikan.")
 
 
 if __name__ == "__main__":

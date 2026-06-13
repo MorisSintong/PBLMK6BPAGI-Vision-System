@@ -6,13 +6,18 @@ from typing import TYPE_CHECKING, Optional
 import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtGui import QImage
+
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
-    from ui_config import DEPTH_MAX_M, DEPTH_MIN_M
+    from ui_config import DEPTH_MAX_M, DEPTH_MIN_M, DISPLAY_FPS
 except ImportError:
     DEPTH_MAX_M = 5.0
     DEPTH_MIN_M = 0.3
+    DISPLAY_FPS = 30
 
 if TYPE_CHECKING:
     from frame_processor import FrameProcessor
@@ -41,6 +46,7 @@ class CameraThread(QThread):
         self._depth_min_m = DEPTH_MIN_M
         self._depth_max_m = DEPTH_MAX_M
         self._threshold_lock = threading.Lock()
+        self._frame_delay_ms = max(1, 1000 // DISPLAY_FPS)
         
         # Fitur Moris yang dikembalikan
         self._processor = processor
@@ -70,15 +76,17 @@ class CameraThread(QThread):
 
     def run(self):
         if self._start_realsense():
+            logger.info("RealSense camera started successfully")
             self._run_realsense_loop()
         else:
             self._capture = self._open_camera()
             if self._capture is None:
-                self.error.emit(
-                    "Kamera gagal dibuka. Tutup aplikasi lain yang sedang memakai kamera."
-                )
+                error_msg = "Kamera gagal dibuka. Tutup aplikasi lain yang sedang memakai kamera."
+                logger.error(error_msg)
+                self.error.emit(error_msg)
                 self._release_resources()
                 return
+            logger.info("Webcam fallback activated")
             self._run_webcam_loop()
 
         self._release_resources()
@@ -124,7 +132,9 @@ class CameraThread(QThread):
             except RuntimeError:
                 read_failures += 1
                 if read_failures >= 10:
-                    self.error.emit("Gagal membaca stream RealSense secara stabil.")
+                    error_msg = "Gagal membaca stream RealSense secara stabil."
+                    logger.error(error_msg)
+                    self.error.emit(error_msg)
                     break
                 self.msleep(30)
                 continue
@@ -135,7 +145,9 @@ class CameraThread(QThread):
             if not color_frame or not depth_frame:
                 read_failures += 1
                 if read_failures >= 10:
-                    self.error.emit("Frame RealSense tidak lengkap.")
+                    error_msg = "Frame RealSense tidak lengkap."
+                    logger.error(error_msg)
+                    self.error.emit(error_msg)
                     break
                 self.msleep(30)
                 continue
@@ -158,8 +170,8 @@ class CameraThread(QThread):
             # Fitur Moris yang dikembalikan: Pipeline Integration
             if self._processor is not None:
                 result = self._processor.process(color_bgr, depth_raw, self._depth_scale)
-                rgb_pixmap = self._bgr_to_qpixmap(result.rgb_frame)
-                depth_pixmap = self._bgr_to_qpixmap(
+                rgb_pixmap = self._bgr_to_qimage(result.rgb_frame)
+                depth_pixmap = self._bgr_to_qimage(
                     result.depth_colormap if result.depth_colormap is not None else np.zeros_like(color_bgr)
                 )
 
@@ -171,13 +183,14 @@ class CameraThread(QThread):
                     label = "Clear"
             else:
                 # Mode fallback jika processor tidak ada
-                rgb_pixmap = self._bgr_to_qpixmap(color_bgr)
+                rgb_pixmap = self._bgr_to_qimage(color_bgr)
                 depth_pixmap = None
                 label = "Clear"
                 dist = None
 
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
             self.distance_info_ready.emit(label, dist)
+            self.msleep(self._frame_delay_ms)
 
     def _run_webcam_loop(self):
         read_failures = 0
@@ -186,7 +199,9 @@ class CameraThread(QThread):
             if not ok:
                 read_failures += 1
                 if read_failures >= 10:
-                    self.error.emit("Gagal membaca frame kamera secara stabil.")
+                    error_msg = "Gagal membaca frame kamera secara stabil."
+                    logger.error(error_msg)
+                    self.error.emit(error_msg)
                     break
                 self.msleep(30)
                 continue
@@ -195,12 +210,13 @@ class CameraThread(QThread):
 
             if self._processor is not None:
                 result = self._processor.process(frame_bgr, None)
-                rgb_pixmap = self._bgr_to_qpixmap(result.rgb_frame)
+                rgb_pixmap = self._bgr_to_qimage(result.rgb_frame)
             else:
-                rgb_pixmap = self._bgr_to_qpixmap(frame_bgr)
+                rgb_pixmap = self._bgr_to_qimage(frame_bgr)
 
             self.frame_pair_ready.emit(rgb_pixmap, None)
             self.distance_info_ready.emit("Depth Tidak Tersedia", None)
+            self.msleep(self._frame_delay_ms)
 
     def _open_camera(self):
         if os.name == "nt":
@@ -222,14 +238,13 @@ class CameraThread(QThread):
             capture.release()
         return None
 
-    def _bgr_to_qpixmap(self, frame_bgr):
+    def _bgr_to_qimage(self, frame_bgr):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         height, width, channels = frame_rgb.shape
         bytes_per_line = channels * width
-        image = QImage(
+        return QImage(
             frame_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
         ).copy()
-        return QPixmap.fromImage(image)
 
     def _release_resources(self):
         if self._pipeline is not None:

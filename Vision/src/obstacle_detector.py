@@ -3,6 +3,10 @@
 import cv2
 import numpy as np
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class ObstacleDetector:
     def __init__(
@@ -98,7 +102,7 @@ class ObstacleDetector:
                 distance = float(np.percentile(valid_depth, 5))
 
                 # Hitung prioritas
-                priority = round(1 / distance, 2)
+                priority = round(1 / max(distance, 0.01), 2)
 
                 # Tentukan warna dan status
                 if distance < danger_threshold:

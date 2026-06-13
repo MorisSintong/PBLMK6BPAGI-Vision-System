@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QStackedWidget
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 
 class DepthView(QWidget):
     def __init__(self):
@@ -56,19 +57,20 @@ class DepthView(QWidget):
         self.stacked_widget.setCurrentIndex(mode_index)
 
     # ── FUNGSI PENERIMA DARI TIM VISION ──
-    def update_frames(self, rgb_pixmap=None, depth_pixmap=None):
+    def update_frames(self, rgb_image=None, depth_image=None):
         """
-        Fungsi ini siap menerima 2 gambar sekaligus dari camera_thread.
+        Menerima QImage dari camera_thread (thread-safe), lalu
+        dikonversi ke QPixmap di main thread untuk ditampilkan.
         """
-        if rgb_pixmap is not None:
-            # Update ke layar RGB tunggal dan panel RGB overlay
+        if rgb_image is not None:
+            rgb_pixmap = QPixmap.fromImage(rgb_image)
             self.label_rgb.setPixmap(rgb_pixmap)
             self.label_rgb.setScaledContents(True)
             self.label_overlay_rgb.setPixmap(rgb_pixmap)
             self.label_overlay_rgb.setScaledContents(True)
 
-        if depth_pixmap is not None:
-            # Update ke layar Depth tunggal dan panel Depth overlay
+        if depth_image is not None:
+            depth_pixmap = QPixmap.fromImage(depth_image)
             self.label_depth.setPixmap(depth_pixmap)
             self.label_depth.setScaledContents(True)
             self.label_overlay_depth.setPixmap(depth_pixmap)

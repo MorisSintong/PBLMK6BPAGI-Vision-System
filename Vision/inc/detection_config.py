@@ -1,3 +1,8 @@
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
 class DetectionConfig:
     def __init__(self):
         # Jarak threshold dalam meter
@@ -9,9 +14,9 @@ class DetectionConfig:
         """Ubah jarak bahaya, dipanggil dari GUI"""
         if self.min_distance <= distance <= self.max_distance:
             self.danger_distance = distance
-            print(f"Danger distance diubah ke: {distance} meter")
+            logger.info(f"Danger distance diubah ke: {distance} meter")
         else:
-            print(f"Error: Jarak harus antara {self.min_distance} - {self.max_distance} meter")
+            logger.error(f"Jarak harus antara {self.min_distance} - {self.max_distance} meter")
 
     def get_danger_distance(self):
         return self.danger_distance
