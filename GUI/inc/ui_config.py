@@ -24,8 +24,8 @@ LABEL_FONT_SCALE = 0.55
 LABEL_THICKNESS  = 1
 
 # ── radar map geometry ────────────────────────────────────────────────────────
-RADAR_WIDTH_PX  = 250
-RADAR_HEIGHT_PX = 300
+RADAR_WIDTH_PX  = 300
+RADAR_HEIGHT_PX = 180
 RADAR_MAX_DEPTH = 8.0
 
 # ── alert panel ──────────────────────────────────────────────────────────────
