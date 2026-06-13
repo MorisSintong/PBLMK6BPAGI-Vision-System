@@ -6,11 +6,7 @@ import numpy as np
 
 class ObstacleDetector:
     def __init__(
-        self,
-        max_distance_m=2.0,
-        min_distance_m=0.04,
-        min_area=800,
-        roi_ratio=0.7
+        self, max_distance_m=2.0, min_distance_m=0.04, min_area=800, roi_ratio=0.7
     ):
         """
         max_distance_m : jarak maksimal obstacle yang dianggap penting
@@ -22,6 +18,7 @@ class ObstacleDetector:
         self.min_distance_m = min_distance_m
         self.min_area = min_area
         self.roi_ratio = roi_ratio
+        self.last_detections: list = []
 
     def detect(self, color_frame, depth_frame, depth_scale=0.001):
         """
@@ -54,8 +51,7 @@ class ObstacleDetector:
 
         # Mask area yang dianggap obstacle
         obstacle_mask = (
-            (depth_meter >= self.min_distance_m) &
-            (depth_meter <= self.max_distance_m)
+            (depth_meter >= self.min_distance_m) & (depth_meter <= self.max_distance_m)
         ).astype(np.uint8) * 255
 
         # Mengurangi noise
@@ -65,9 +61,7 @@ class ObstacleDetector:
 
         # Cari contour obstacle
         contours, _ = cv2.findContours(
-            obstacle_mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
+            obstacle_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
         obstacle_detected = False
@@ -98,10 +92,10 @@ class ObstacleDetector:
             else:
                 zone = "right"
 
-            object_depth = depth_meter[y:y+h, x:x+w]
+            object_depth = depth_meter[y : y + h, x : x + w]
             valid_depth = object_depth[
-                (object_depth >= self.min_distance_m) &
-                (object_depth <= self.max_distance_m)
+                (object_depth >= self.min_distance_m)
+                & (object_depth <= self.max_distance_m)
             ]
 
             if valid_depth.size > 0:
@@ -114,13 +108,15 @@ class ObstacleDetector:
                     closest_distance = distance
 
                 # Tambah info objek ke list
-                detections.append({
-                    "object_class": "obstacle",
-                    "distance_m": distance,
-                    "zone": zone,
-                    "priority": priority,
-                    "bbox": [real_x, real_y, w, h]
-                })
+                detections.append(
+                    {
+                        "object_class": "obstacle",
+                        "distance_m": distance,
+                        "zone": zone,
+                        "priority": priority,
+                        "bbox": [real_x, real_y, w, h],
+                    }
+                )
 
                 label = f"Obstacle: {distance:.2f} m | {zone} | P:{priority}"
             else:
@@ -131,7 +127,7 @@ class ObstacleDetector:
                 (real_x, real_y),
                 (real_x + w, real_y + h),
                 (0, 0, 255),
-                2
+                2,
             )
 
             cv2.putText(
@@ -141,17 +137,11 @@ class ObstacleDetector:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (0, 0, 255),
-                2
+                2,
             )
 
         # Gambar area ROI
-        cv2.rectangle(
-            annotated_frame,
-            (x1, y1),
-            (x2, y2),
-            (255, 255, 0),
-            2
-        )
+        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (255, 255, 0), 2)
 
         if obstacle_detected:
             status_text = "OBSTACLE DETECTED"
@@ -167,8 +157,8 @@ class ObstacleDetector:
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
             status_color,
-            2
+            2,
         )
 
+        self.last_detections = detections
         return annotated_frame, obstacle_detected, closest_distance
-    
