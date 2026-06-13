@@ -10,18 +10,15 @@ class ObstacleDetector:
         max_distance_m=5.0,
         min_distance_m=0.3,
         min_area=800,
-        roi_ratio=0.7,
     ):
         """
         max_distance_m : jarak maksimal obstacle yang dianggap penting
         min_distance_m : jarak minimal valid agar noise kamera diabaikan
         min_area       : luas minimum objek agar tidak mendeteksi noise kecil
-        roi_ratio      : rasio area ROI (region of interest)
         """
         self.max_distance_m = max_distance_m
         self.min_distance_m = min_distance_m
         self.min_area = min_area
-        self.roi_ratio = roi_ratio
         self.last_detections: list = []
 
     def detect(

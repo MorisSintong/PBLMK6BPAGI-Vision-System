@@ -9,7 +9,7 @@ import time
 
 import numpy as np
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for sub in ["Vision/src", "Vision/inc", "GUI/inc"]:
     p = os.path.join(BASE, sub)
     if p not in sys.path:
