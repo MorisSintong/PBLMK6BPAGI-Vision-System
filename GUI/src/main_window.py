@@ -4,10 +4,15 @@ from Alert_panel import AlertPanel
 from camera_thread import CameraThread
 from controls_panel import ControlsPanel
 from depth_view import DepthView
+from radar_view import RadarView
 from detection_config import DetectionConfig
 from frame_processor import FrameProcessor
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QApplication, QHBoxLayout, QMainWindow,
+    QVBoxLayout, QWidget, QScrollArea
+)
+from styles import STATUS_INACTIVE
 
 
 class MainWindow(QMainWindow):
@@ -26,27 +31,47 @@ class MainWindow(QMainWindow):
 
         # ── Bagian Kiri: Camera View ──────────────────────────────────
         self.area_kamera = DepthView()
-        main_layout.addWidget(self.area_kamera, stretch=80)
+        main_layout.addWidget(self.area_kamera, stretch=75)
 
-        # ── Bagian Kanan: Controls + Alert ────────────────────────────
+        # ── Bagian Kanan ──────────────────────────────────────────────
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(6, 6, 6, 6)
-        right_layout.setSpacing(6)
+        right_layout.setSpacing(8)
 
         self.controls_panel = ControlsPanel()
-        self.alert_panel = AlertPanel()
+        self.alert_panel    = AlertPanel()
+        self.radar          = RadarView()
 
-        right_layout.addWidget(self.controls_panel, stretch=40)
-        right_layout.addWidget(self.alert_panel, stretch=60)
+        # ── Wrapper untuk center radar ────────────────────────────────
+        radar_wrapper = QWidget()
+        radar_wrapper_layout = QHBoxLayout(radar_wrapper)
+        radar_wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        radar_wrapper_layout.addStretch()
+        radar_wrapper_layout.addWidget(self.radar)
+        radar_wrapper_layout.addStretch()
 
-        main_layout.addWidget(right_panel, stretch=20)
+        right_layout.addWidget(self.controls_panel)
+        right_layout.addWidget(self.alert_panel)
+        right_layout.addWidget(radar_wrapper)
+        right_layout.addStretch()
+
+        # ── Bungkus dengan ScrollArea ─────────────────────────────────
+        scroll = QScrollArea()
+        scroll.setWidget(right_panel)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        main_layout.addWidget(scroll, stretch=25)
 
         # ── Vision pipeline ───────────────────────────────────────────
         config = DetectionConfig()
         self.frame_processor = FrameProcessor(config)
 
-        # ── Kamera thread (dengan pipeline processor) ─────────────────
+        # ── Kamera thread ─────────────────────────────────────────────
         self.camera_thread = CameraThread(
             camera_index=0,
             parent=self,
@@ -64,10 +89,18 @@ class MainWindow(QMainWindow):
         self._connect_signals()
 
     def _connect_signals(self):
-        self.controls_panel.thresholds_changed.connect(self.alert_panel.set_thresholds)
-        self.controls_panel.camera_start_requested.connect(self._on_camera_start)
-        self.controls_panel.camera_stop_requested.connect(self._on_camera_stop)
-        self.controls_panel.view_mode_changed.connect(self.area_kamera.set_view_mode)
+        self.controls_panel.thresholds_changed.connect(
+            self.alert_panel.set_thresholds
+        )
+        self.controls_panel.camera_start_requested.connect(
+            self._on_camera_start
+        )
+        self.controls_panel.camera_stop_requested.connect(
+            self._on_camera_stop
+        )
+        self.controls_panel.view_mode_changed.connect(
+            self.area_kamera.set_view_mode
+        )
         self.controls_panel.depth_threshold_changed.connect(
             self.camera_thread.set_depth_thresholds
         )
@@ -78,13 +111,14 @@ class MainWindow(QMainWindow):
     def _on_camera_stop(self):
         self.camera_thread.stop_capture()
         self.alert_panel.update_info("Menunggu...", None)
+        self.radar.clear_obstacles()
 
     def _on_camera_error(self, message: str):
         self.controls_panel._camera_running = False
         self.controls_panel.btn_start.setEnabled(True)
         self.controls_panel.btn_stop.setEnabled(False)
-        self.controls_panel.camera_status_label.setText(f"Status: ❌ {message}")
-        self.controls_panel.camera_status_label.setStyleSheet("color: #f38ba8;")
+        self.controls_panel.camera_status_label.setText(f"Status: {message}")
+        self.controls_panel.camera_status_label.setStyleSheet(STATUS_INACTIVE)
 
     def closeEvent(self, a0):
         self.camera_thread.stop_capture()
