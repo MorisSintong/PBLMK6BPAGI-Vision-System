@@ -1,6 +1,6 @@
 # Progress Report — Vision System for Security Robot
 
-> Last updated: 13 Juni 2026 (Foundation & Infrastructure Phase)
+> Last updated: 19 Juni 2026 (YOLOv8 Integration)
 
 ---
 
@@ -39,14 +39,20 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Logging framework | R1 | Created `Vision/inc/logging_config.py` with console + file output. Replaced all `print()` statements with proper logging across codebase |
 | Camera config implementation | R1 | Filled `camera_config.py` with RealSense D455 settings, webcam fallback settings, depth filter parameters, helper methods |
 | Code quality: file naming | R1 | Renamed `Alert_panel.py` → `alert_panel.py` (PEP 8 compliance). Updated import in `main_window.py` |
+| **YOLOv8 Integration (R2 + R1)** | | |
+| `YOLOWrapper` integration | R2 (Husein) + R1 | Cherry-picked `yolowrapper.py` from R2 branch. Removed torch.load security bypass. Added logging. Wired into `YOLODetectionStage` pipeline |
+| `Detection` dataclass contract | R2 | Output format `{bbox, class_id, class_name, confidence}` compatible with `FrameData.detections` for R4 (Sensor Fusion) |
+| `YOLODetectionStage` wired | R1 | No longer a placeholder. Instantiates `YOLOWrapper` with configurable model_path, conf_threshold, input_size. Graceful fallback if ultralytics not installed |
+| `.gitignore` for model weights | R1 | Added `*.pt`, `*.onnx`, `*.engine`, `Vision/models/`, `logs/` to prevent committing large binary files |
+| `data.yaml` dataset config | R2 | Roboflow dataset with 3 classes: mobil, motor, person |
 
 ### ⏳ In Progress / Not Started
 
 | Deliverable | Role | Status |
 |---|---|---|
-| YOLOv8 integration (`yolo_wrapper.py`) | R2 (Husein) | ❌ Belum mulai |
+| YOLOv8 integration (`yolowrapper.py`) | R2 (Husein) | ✅ Merged (with fixes: security bypass removed, logging added) |
 | Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ❌ Menunggu R2 + R3 |
-| Dataset acquisition & labeling | R5 (Hamid) | ❌ Belum mulai |
+| Dataset acquisition & labeling | R5 (Hamid) | ⏳ `data.yaml` ready. Training dataset from Roboflow |
 | Test harness & benchmark | R5 | ❌ Belum mulai |
 | RadarView wiring (data nyata dari pipeline) | R6 | ❌ Menunggu R4 |
 | DepthView annotation overlay | R6 | ❌ Belum mulai |
@@ -66,8 +72,8 @@ main.py → MainWindow
                     ├── RealSense capture + depth filters
                     └── FrameProcessor
                           ├── DepthProcessingStage (colormap + multi-zone)
-                          ├── YOLODetectionStage (placeholder)
-                          └── FusionStage (placeholder)
+                          ├── YOLODetectionStage (YOLOv8 via YOLOWrapper)
+                          └── FusionStage (placeholder — menunggu R2 + R3)
 ```
 
 ## Data Flow
@@ -100,7 +106,12 @@ CameraThread (capture + filter)
 │   │   ├── camera_thread.py         # Capture + filter + pipeline integration
 │   │   ├── frame_processor.py       # Pipeline orchestrator
 │   │   ├── obstacle_detector.py     # Depth obstacle detection
-│   │   └── recorder.py              # Standalone recording utility
+│   │   ├── recorder.py              # Standalone recording utility
+│   │   ├── yolowrapper.py           # YOLOv8 inference wrapper (R2)
+│   │   └── data.yaml                # Roboflow dataset config (3 classes)
+│   ├── models/                      # (.gitignore) Model weights directory
+│   │   ├── security_best.pt         # Trained model (not tracked)
+│   │   └── yolov8n.pt               # Pre-trained YOLOv8-nano (not tracked)
 │   └── inc/
 │       ├── detection_config.py      # Detection thresholds
 │       ├── camera_config.py         # Camera parameters (RealSense + webcam)
@@ -158,11 +169,10 @@ CameraThread (capture + filter)
 
 | Gap | Detail |
 |---|---|
-| YOLO belum terintegrasi | `YOLODetectionStage` masih placeholder |
-| Fusion belum terintegrasi | `FusionStage` placeholder, menunggu R2 + R3 |
+| Fusion belum terintegrasi | `FusionStage` placeholder, menunggu R2 + R3 output |
 | RadarView tidak menerima data | `update_obstacles()` tidak pernah dipanggil — menunggu pipeline produce `angle_deg` |
 | Tidak ada integration test | Hanya isolation test. Belum ada test CameraThread + FrameProcessor end-to-end |
-| Tidak ada dataset | R5 belum mulai akuisisi & labeling |
+| Model weights belum ada di repo | `security_best.pt` dan `yolov8n.pt` di `.gitignore` — R2 perlu download manual ke `Vision/models/` |
 
 ## Merge History
 
@@ -172,3 +182,4 @@ CameraThread (capture + filter)
 | `feat/gui-radarview` | R6 | ✅ Merged |
 | `feat/gui-radarview-180` | R6 | ✅ Merged |
 | `fix/depth-pipeline-integration` | R3 | ✅ Merged (after rebase + fixes) |
+| `yolowrapper-clean` | R2 + R1 | ✅ Merged (YOLO integration with security/quality fixes) |
