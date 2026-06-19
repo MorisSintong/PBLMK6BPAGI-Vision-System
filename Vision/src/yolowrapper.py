@@ -11,8 +11,13 @@ from dataclasses import dataclass
 from typing import List
 import time
 import os
+import warnings
 
 import numpy as np
+
+# Suppress ultralytics' torch.load FutureWarning (upstream issue, not ours)
+warnings.filterwarnings("ignore", message=".*weights_only.*", category=FutureWarning)
+
 from ultralytics import YOLO
 
 from logging_config import get_logger
