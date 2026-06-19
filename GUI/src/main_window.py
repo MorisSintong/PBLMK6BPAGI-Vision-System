@@ -1,3 +1,4 @@
+import os
 import sys
 
 from alert_panel import AlertPanel
@@ -6,7 +7,7 @@ from controls_panel import ControlsPanel
 from depth_view import DepthView
 from radar_view import RadarView
 from detection_config import DetectionConfig
-from frame_processor import FrameProcessor
+from frame_processor import FrameProcessor, YOLODetectionStage
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QMainWindow,
@@ -70,6 +71,24 @@ class MainWindow(QMainWindow):
         # ── Vision pipeline ───────────────────────────────────────────
         config = DetectionConfig()
         self.frame_processor = FrameProcessor(config)
+
+        # ── Add YOLO stage (R2) ──────────────────────────────────────
+        yolo_model = os.path.join(
+            os.path.dirname(__file__), "..", "..", "Vision", "models", "yolov8n.pt"
+        )
+        if os.path.exists(yolo_model):
+            self.frame_processor.add_stage(
+                YOLODetectionStage(model_path=yolo_model)
+            )
+        else:
+            # Fallback to security_best.pt
+            yolo_model = os.path.join(
+                os.path.dirname(__file__), "..", "..", "Vision", "models", "security_best.pt"
+            )
+            if os.path.exists(yolo_model):
+                self.frame_processor.add_stage(
+                    YOLODetectionStage(model_path=yolo_model)
+                )
 
         # ── Kamera thread ─────────────────────────────────────────────
         self.camera_thread = CameraThread(
