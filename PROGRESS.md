@@ -1,6 +1,6 @@
 # Progress Report — Vision System for Security Robot
 
-> Last updated: 19 Juni 2026 (YOLOv8 Integration)
+> Last updated: 19 Juni 2026 (Critical Fixes + Audit)
 
 ---
 
@@ -39,6 +39,11 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Logging framework | R1 | Created `Vision/inc/logging_config.py` with console + file output. Replaced all `print()` statements with proper logging across codebase |
 | Camera config implementation | R1 | Filled `camera_config.py` with RealSense D455 settings, webcam fallback settings, depth filter parameters, helper methods |
 | Code quality: file naming | R1 | Renamed `Alert_panel.py` → `alert_panel.py` (PEP 8 compliance). Updated import in `main_window.py` |
+| **Critical Fixes (19 Juni 2026)** | | |
+| RealSense pipeline conflict fix | R3 | Added `_active_pipeline_count` flag to `FrameRecorder` to prevent crash when camera is already active |
+| Radar view connection | R4 | Added `obstacles_ready` signal to CameraThread. Connected to RadarView via angle conversion from bbox position |
+| Thread safety — last_detections | R1 | Added `threading.Lock` + property getter/setter for `ObstacleDetector.last_detections` |
+| Float32 buffer reuse | R1 | Added reusable `_depth_buffer` with `np.multiply(..., out=...)` to avoid ~1.2MB allocation per frame |
 | **YOLOv8 Integration (R2 + R1)** | | |
 | `YOLOWrapper` integration | R2 (Husein) + R1 | Cherry-picked `yolowrapper.py` from R2 branch. Removed torch.load security bypass. Added logging. Wired into `YOLODetectionStage` pipeline |
 | `Detection` dataclass contract | R2 | Output format `{bbox, class_id, class_name, confidence}` compatible with `FrameData.detections` for R4 (Sensor Fusion) |
@@ -54,7 +59,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ❌ Menunggu R2 + R3 |
 | Dataset acquisition & labeling | R5 (Hamid) | ⏳ `data.yaml` ready. Training dataset from Roboflow |
 | Test harness & benchmark | R5 | ❌ Belum mulai |
-| RadarView wiring (data nyata dari pipeline) | R6 | ❌ Menunggu R4 |
+| RadarView wiring (data nyata dari pipeline) | R6 | ✅ FIXED — Connected via `obstacles_ready` signal |
 | DepthView annotation overlay | R6 | ❌ Belum mulai |
 | End-to-end integration test | R1 | ❌ Belum mulai |
 
@@ -97,13 +102,14 @@ CameraThread (capture + filter)
 ├── main.py                          # Entry point
 ├── ROLES.md                         # Role assignments (AI-friendly)
 ├── PROGRESS.md                      # Progress documentation
+├── problems.md                      # Critical audit report + issue tracking
 ├── tests/
 │   ├── test_frame_processor.py      # Standalone pipeline tests (8/8)
-│   ├── test_obstacle_detector.py    # ObstacleDetector tests (13 tests)
+│   ├── test_obstacle_detector.py    # ObstacleDetector tests (16 tests)
 │   └── test_camera_thread.py        # CameraThread tests (15 tests)
 ├── Vision/
 │   ├── src/
-│   │   ├── camera_thread.py         # Capture + filter + pipeline integration
+│   │   ├── camera_thread.py         # Capture + filter + pipeline integration (3 signals)
 │   │   ├── frame_processor.py       # Pipeline orchestrator
 │   │   ├── obstacle_detector.py     # Depth obstacle detection
 │   │   ├── recorder.py              # Standalone recording utility
@@ -145,7 +151,7 @@ CameraThread (capture + filter)
 | Threshold update | ✅ |
 | Latency report | ✅ |
 | Custom stage extensibility | ✅ |
-| `test_obstacle_detector.py` (13 tests) | ✅ All pass |
+| `test_obstacle_detector.py` (16 tests) | ✅ All pass |
 | Instantiation & custom params | ✅ |
 | Detect no obstacles | ✅ |
 | Detect none inputs | ✅ |
@@ -156,6 +162,9 @@ CameraThread (capture + filter)
 | Last detections updated | ✅ |
 | Annotated frame has status | ✅ |
 | Output format contract | ✅ |
+| Depth buffer reuse | ✅ |
+| Depth buffer resize on shape change | ✅ |
+| Thread safety last_detections | ✅ |
 | `test_camera_thread.py` (15 tests) | ✅ All pass |
 | Instantiation & custom camera index | ✅ |
 | Depth thresholds (valid/invalid) | ✅ |
@@ -170,7 +179,7 @@ CameraThread (capture + filter)
 | Gap | Detail |
 |---|---|
 | Fusion belum terintegrasi | `FusionStage` placeholder, menunggu R2 + R3 output |
-| RadarView tidak menerima data | `update_obstacles()` tidak pernah dipanggil — menunggu pipeline produce `angle_deg` |
+| ~~RadarView tidak menerima data~~ | ✅ FIXED — Connected via `obstacles_ready` signal + angle conversion |
 | Tidak ada integration test | Hanya isolation test. Belum ada test CameraThread + FrameProcessor end-to-end |
 | Model weights belum ada di repo | `security_best.pt` dan `yolov8n.pt` di `.gitignore` — R2 perlu download manual ke `Vision/models/` |
 

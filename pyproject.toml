@@ -12,3 +12,7 @@ pythonpath = [
     "GUI/src",
     "GUI/inc",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:thop.*:",
+    "ignore:.*weights_only.*:FutureWarning:ultralytics.*:",
+]
