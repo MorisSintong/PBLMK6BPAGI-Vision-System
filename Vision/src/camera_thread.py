@@ -31,6 +31,7 @@ except ImportError:
 class CameraThread(QThread):
     frame_pair_ready = pyqtSignal(object, object)
     distance_info_ready = pyqtSignal(str, object)
+    obstacles_ready = pyqtSignal(list)
     error = pyqtSignal(str)
 
     def __init__(
@@ -190,6 +191,7 @@ class CameraThread(QThread):
 
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
             self.distance_info_ready.emit(label, dist)
+            self.obstacles_ready.emit(result.obstacles if self._processor is not None else [])
             self.msleep(self._frame_delay_ms)
 
     def _run_webcam_loop(self):
@@ -216,6 +218,7 @@ class CameraThread(QThread):
 
             self.frame_pair_ready.emit(rgb_pixmap, None)
             self.distance_info_ready.emit("Depth Tidak Tersedia", None)
+            self.obstacles_ready.emit([])
             self.msleep(self._frame_delay_ms)
 
     def _open_camera(self):

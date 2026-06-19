@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
         )
         self.camera_thread.frame_pair_ready.connect(self.area_kamera.update_frames)
         self.camera_thread.distance_info_ready.connect(self.alert_panel.update_info)
+        self.camera_thread.obstacles_ready.connect(self._on_obstacles_ready)
         self.camera_thread.error.connect(self._on_camera_error)
         self.camera_thread.set_depth_thresholds(
             self.controls_panel.spin_depth_min.value(),
@@ -131,6 +132,20 @@ class MainWindow(QMainWindow):
         self.camera_thread.stop_capture()
         self.alert_panel.update_info("Menunggu...", None)
         self.radar.clear_obstacles()
+
+    def _on_obstacles_ready(self, obstacles: list):
+        radar_data = []
+        frame_width = 640
+        for obs in obstacles:
+            bbox = obs.get("bbox", [0, 0, 0, 0])
+            center_x = bbox[0] + bbox[2] // 2
+            angle_deg = 180 * center_x / frame_width
+            radar_data.append({
+                "angle_deg": angle_deg,
+                "distance_m": obs.get("distance_m", 0),
+                "zone": obs.get("zone", "CENTER").upper(),
+            })
+        self.radar.update_obstacles(radar_data)
 
     def _on_camera_error(self, message: str):
         self.controls_panel._camera_running = False

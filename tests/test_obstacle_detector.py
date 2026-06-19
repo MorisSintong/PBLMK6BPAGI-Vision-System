@@ -5,6 +5,7 @@ Uses synthetic frames — no camera hardware required.
 
 import os
 import sys
+import threading
 
 import numpy as np
 import pytest
@@ -178,6 +179,67 @@ def test_output_format_contract():
     assert isinstance(obs["area_px"], int)
 
 
+def test_depth_buffer_reuse():
+    det = ObstacleDetector(min_area=100)
+    color = make_color_frame()
+    depth_m = np.full((480, 640), 5.0, dtype=np.float32)
+    depth_m[200:300, 280:360] = 2.0
+    depth_raw = (depth_m / 0.001).astype(np.uint16)
+
+    det.detect(color, depth_raw)
+    buf1 = det._depth_buffer
+
+    det.detect(color, depth_raw)
+    buf2 = det._depth_buffer
+
+    assert buf1 is buf2, "Depth buffer should be reused across calls"
+
+
+def test_depth_buffer_resize_on_shape_change():
+    det = ObstacleDetector(min_area=100)
+    color = make_color_frame(480, 640)
+    depth_raw = np.full((480, 640), 5000, dtype=np.uint16)
+
+    det.detect(color, depth_raw)
+    buf1 = det._depth_buffer
+
+    color_small = make_color_frame(240, 320)
+    depth_raw_small = np.full((240, 320), 5000, dtype=np.uint16)
+    det.detect(color_small, depth_raw_small)
+    buf2 = det._depth_buffer
+
+    assert buf1 is not buf2, "Buffer should realloc on shape change"
+    assert buf2.shape == (240, 320)
+
+
+def test_thread_safety_last_detections():
+    det = ObstacleDetector(min_area=100)
+    color = make_color_frame()
+    depth_m = np.full((480, 640), 10.0, dtype=np.float32)
+    depth_m[200:300, 280:360] = 2.0
+    depth_raw = (depth_m / 0.001).astype(np.uint16)
+
+    errors = []
+
+    def writer():
+        for _ in range(50):
+            det.detect(color, depth_raw)
+
+    def reader():
+        for _ in range(50):
+            _ = det.last_detections
+
+    threads = [threading.Thread(target=writer) for _ in range(3)]
+    threads += [threading.Thread(target=reader) for _ in range(3)]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(errors) == 0
+
+
 if __name__ == "__main__":
     print("=== ObstacleDetector Tests ===\n")
     tests = [
@@ -194,6 +256,9 @@ if __name__ == "__main__":
         ("last detections updated", test_last_detections_updated),
         ("annotated frame has status", test_annotated_frame_has_status),
         ("output format contract", test_output_format_contract),
+        ("depth buffer reuse", test_depth_buffer_reuse),
+        ("depth buffer resize on shape change", test_depth_buffer_resize_on_shape_change),
+        ("thread safety last_detections", test_thread_safety_last_detections),
     ]
     passed = failed = 0
     for name, fn in tests:

@@ -1,5 +1,8 @@
 # Vision/src/obstacle_detector.py
 
+import threading
+from typing import Optional
+
 import cv2
 import numpy as np
 
@@ -23,7 +26,25 @@ class ObstacleDetector:
         self.max_distance_m = max_distance_m
         self.min_distance_m = min_distance_m
         self.min_area = min_area
-        self.last_detections: list = []
+
+        # Thread safety for last_detections
+        self._detections_lock = threading.Lock()
+        self._last_detections: list = []
+
+        # Reusable buffer for float32 depth conversion (avoids allocation per frame)
+        self._depth_buffer: Optional[np.ndarray] = None
+
+    @property
+    def last_detections(self) -> list:
+        """Thread-safe getter for last detections."""
+        with self._detections_lock:
+            return self._last_detections.copy()
+
+    @last_detections.setter
+    def last_detections(self, value: list) -> None:
+        """Thread-safe setter for last detections."""
+        with self._detections_lock:
+            self._last_detections = value
 
     def detect(
         self,
@@ -42,7 +63,12 @@ class ObstacleDetector:
 
         annotated_frame = color_frame.copy()
         height, width = depth_frame.shape[:2]
-        depth_meter = depth_frame.astype(np.float32) * depth_scale
+
+        # Reuse buffer for float32 conversion (avoids ~1.2MB allocation per frame)
+        if self._depth_buffer is None or self._depth_buffer.shape != depth_frame.shape:
+            self._depth_buffer = np.empty_like(depth_frame, dtype=np.float32)
+        np.multiply(depth_frame, depth_scale, out=self._depth_buffer, casting="unsafe")
+        depth_meter = self._depth_buffer
 
         # Pembagian 3 Zona
         zone_width = width // 3
@@ -159,5 +185,8 @@ class ObstacleDetector:
             2,
         )
 
-        self.last_detections = obstacles_list
+        # Thread-safe assignment
+        with self._detections_lock:
+            self._last_detections = obstacles_list
+
         return annotated_frame, obstacles_list

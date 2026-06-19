@@ -202,7 +202,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ---
 
 ## Role 6 — GUI Maintenance & Operator Console Engineer
-**Orang:** (TBD)
+**Orang:** Adel
 
 ### Tanggung jawab
 - Memperbarui AlertPanel: nama objek, jarak, zona, status bahaya, rekomendasi aksi

@@ -10,6 +10,9 @@ logger = get_logger(__name__)
 
 
 class FrameRecorder:
+    # Class-level flag to prevent multiple pipelines on same device
+    _active_pipeline_count = 0
+
     def __init__(self, save_path="data/recordings"):
         self.pipeline = rs.pipeline()  # type: ignore[union-attr]
         self.config = rs.config()  # type: ignore[union-attr]
@@ -25,9 +28,17 @@ class FrameRecorder:
         self.pipeline_started = False
 
     def start(self):
+        if FrameRecorder._active_pipeline_count > 0:
+            logger.error(
+                "RealSense pipeline sudah aktif di device lain. "
+                "Hentikan CameraThread terlebih dahulu sebelum recording."
+            )
+            return False
+
         try:
             self.pipeline.start(self.config)
             self.pipeline_started = True
+            FrameRecorder._active_pipeline_count += 1
             logger.info("RealSense camera aktif. Tekan 'q' untuk berhenti.")
             return True
         except Exception as e:
@@ -63,6 +74,7 @@ class FrameRecorder:
         if self.pipeline_started:
             self.pipeline.stop()
             self.pipeline_started = False
+            FrameRecorder._active_pipeline_count = max(0, FrameRecorder._active_pipeline_count - 1)
         logger.info("RealSense dimatikan.")
 
 
