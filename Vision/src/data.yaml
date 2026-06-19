@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['mobil', 'motor', 'person']
+
+roboflow:
+  workspace: tes-qfyna
+  project: labelingdepthcamera-obft1
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/tes-qfyna/labelingdepthcamera-obft1/dataset/1

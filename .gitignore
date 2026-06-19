@@ -78,3 +78,17 @@ __pycache__/
 .zed/
 Doc/texDoc/teamRoles/
 Doc/texDoc/
+
+# =========================
+# ML Model Weights
+# =========================
+*.pt
+*.onnx
+*.engine
+*.pth
+Vision/models/
+
+# =========================
+# Logs
+# =========================
+logs/

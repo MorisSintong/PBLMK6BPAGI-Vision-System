@@ -27,6 +27,11 @@ import numpy as np
 from detection_config import DetectionConfig
 from obstacle_detector import ObstacleDetector
 
+try:
+    from yolowrapper import YOLOWrapper
+except ImportError:
+    YOLOWrapper = None  # type: ignore[misc,assignment]
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # FrameData — struktur data yang mengalir antar stage
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -238,40 +243,57 @@ class DepthProcessingStage(PipelineStage):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# YOLODetectionStage — placeholder untuk Role 2
+# YOLODetectionStage — Role 2 (YOLOv8 Specialist)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
 class YOLODetectionStage(PipelineStage):
     """Stage deteksi objek menggunakan YOLOv8.
 
-    PLACEHOLDER — akan diimplementasikan oleh Role 2 (YOLOv8 Specialist).
-
     Kontrak input:   FrameData.rgb_frame (numpy BGR uint8)
     Kontrak output:  FrameData.detections (List[Dict])
 
-    Format per detection (WAJIB):
+    Format per detection:
         {
             "bbox":        [x1, y1, x2, y2],  # format xyxy, int
-            "class_id":    int,                # indeks kelas COCO
-            "class_name":  str,                # contoh: "person", "chair"
+            "class_id":    int,                # indeks kelas
+            "class_name":  str,                # contoh: "person", "mobil"
             "confidence":  float,              # 0.0 sampai 1.0
         }
-
-    Contoh output untuk frame dengan 2 objek:
-        [
-            {"bbox": [100,200,300,400], "class_id": 0, "class_name": "person", "confidence": 0.92},
-            {"bbox": [400,100,550,250], "class_id": 56, "class_name": "chair", "confidence": 0.78},
-        ]
     """
 
-    def __init__(self, model_path: str = "") -> None:
+    def __init__(self, model_path: str = "yolov8n.pt", conf_threshold: float = 0.25, input_size: int = 416) -> None:
         super().__init__("YOLODetectionStage")
         self._model_path = model_path
-        self._model = None  # Akan diisi Role 2
+        self._wrapper = None
+
+        if YOLOWrapper is not None and model_path:
+            try:
+                self._wrapper = YOLOWrapper(
+                    model_path=model_path,
+                    conf_threshold=conf_threshold,
+                    input_size=input_size,
+                )
+            except Exception as e:
+                from logging_config import get_logger
+                get_logger(__name__).warning(f"YOLO model failed to load: {e}")
 
     def process(self, data: FrameData) -> FrameData:
-        # Placeholder — tidak mengubah data
+        if self._wrapper is None:
+            return data
+
+        detections = self._wrapper.detect(data.rgb_frame)
+
+        data.detections = [
+            {
+                "bbox": d.bbox,
+                "class_id": d.class_id,
+                "class_name": d.class_name,
+                "confidence": d.confidence,
+            }
+            for d in detections
+        ]
+
         return data
 
 
