@@ -14,6 +14,7 @@ import os
 import warnings
 
 import numpy as np
+import torch
 
 # Suppress ultralytics' torch.load FutureWarning (upstream issue, not ours)
 warnings.filterwarnings("ignore", message=".*weights_only.*", category=FutureWarning)
@@ -39,10 +40,12 @@ class YOLOWrapper:
         self.conf_threshold = conf_threshold
         self.input_size = input_size
 
-        logger.info(f"Loading YOLO model from: {model_path}")
+        self._device = "0" if torch.cuda.is_available() else "cpu"
+
+        logger.info(f"Loading YOLO model from: {model_path} (device: {self._device})")
         self.model = YOLO(model_path)
         self.class_mapping = self.model.names
-        logger.info(f"YOLO model loaded. Classes: {len(self.class_mapping)}")
+        logger.info(f"YOLO model loaded. Classes: {len(self.class_mapping)} | GPU: {torch.cuda.is_available()}")
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         if frame is None:
@@ -52,6 +55,7 @@ class YOLOWrapper:
             source=frame,
             imgsz=self.input_size,
             conf=self.conf_threshold,
+            device=self._device,
             verbose=False,
         )
 
