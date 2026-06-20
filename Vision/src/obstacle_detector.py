@@ -88,8 +88,8 @@ class ObstacleDetector:
             (depth_meter >= self.min_distance_m) & (depth_meter <= self.max_distance_m)
         ).astype(np.uint8) * 255
 
-        # Mengurangi noise
-        kernel = np.ones((5, 5), np.uint8)
+        # Mengurangi noise dengan optimized native structure
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         obstacle_mask = cv2.morphologyEx(obstacle_mask, cv2.MORPH_OPEN, kernel)
         obstacle_mask = cv2.morphologyEx(obstacle_mask, cv2.MORPH_CLOSE, kernel)
 

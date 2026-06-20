@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from typing import TYPE_CHECKING, Optional
 
 import cv2
@@ -127,6 +128,7 @@ class CameraThread(QThread):
     def _run_realsense_loop(self):
         read_failures = 0  # Fitur Moris yang dikembalikan
         while self._running:
+            start_time = time.time()
             try:
                 frames = self._pipeline.wait_for_frames(timeout_ms=1000)
             except RuntimeError:
@@ -190,11 +192,16 @@ class CameraThread(QThread):
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
             self.distance_info_ready.emit(label, dist)
             self.obstacles_ready.emit(result.obstacles if self._processor is not None else [])
-            self.msleep(self._frame_delay_ms)
+            
+            # Delta Sleep to maintain FPS without double blocking
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            sleep_ms = max(1, self._frame_delay_ms - elapsed_ms)
+            self.msleep(sleep_ms)
 
     def _run_webcam_loop(self):
         read_failures = 0
         while self._running:
+            start_time = time.time()
             ok, frame_bgr = self._capture.read()
             if not ok:
                 read_failures += 1
@@ -217,7 +224,11 @@ class CameraThread(QThread):
             self.frame_pair_ready.emit(rgb_pixmap, QImage()) # Empty QImage instead of None
             self.distance_info_ready.emit("Depth Tidak Tersedia", None)
             self.obstacles_ready.emit([])
-            self.msleep(self._frame_delay_ms)
+            
+            # Delta Sleep to maintain FPS without hogging CPU in fallback mode
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            sleep_ms = max(1, self._frame_delay_ms - elapsed_ms)
+            self.msleep(sleep_ms)
 
     def _open_camera(self):
         if os.name == "nt":

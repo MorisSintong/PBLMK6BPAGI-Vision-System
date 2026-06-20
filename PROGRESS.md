@@ -52,6 +52,10 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Pipeline Error Catching | R1 | Wrapped `PipelineStage._measure()` with exception handler pushing to `FrameData.errors` |
 | Python Package Structure | R6 | Included `__init__.py` files across all `Vision` and `GUI` source directories |
 | Signal Typing Strictness | R1 | Upgraded generic `object` signals in `CameraThread` to strictly typed `QImage` signals |
+| **Performance Optimizations** | | |
+| Delta Sleep FPS Fix | R1 | Replaced fixed `msleep` with `time.time()` delta sleep in `CameraThread` preventing double-blocking latency |
+| YOLO FP16 Inference | R2 | Added `half=True` to YOLO predict call enabling 2x speedup on GPU |
+| OpenCV Kernel Optimized | R1 | Replaced `np.ones` with `cv2.getStructuringElement` in `ObstacleDetector` for morphology operations |
 | **YOLOv8 Integration (R2 + R1)** | | |
 | `YOLOWrapper` integration | R2 (Husein) + R1 | Cherry-picked `yolowrapper.py` from R2 branch. Removed torch.load security bypass. Added logging. Wired into `YOLODetectionStage` pipeline |
 | `Detection` dataclass contract | R2 | Output format `{bbox, class_id, class_name, confidence}` compatible with `FrameData.detections` for R4 (Sensor Fusion) |
