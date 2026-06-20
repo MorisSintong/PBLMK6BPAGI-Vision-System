@@ -341,8 +341,76 @@ class FusionStage(PipelineStage):
     def __init__(self) -> None:
         super().__init__("FusionStage")
 
+    def _calculate_overlap_ratio(self, depth_box: List[int], yolo_box: List[int]) -> float:
+        """Hitung porsi area dari depth_box yang tertutupi oleh yolo_box."""
+        xA = max(depth_box[0], yolo_box[0])
+        yA = max(depth_box[1], yolo_box[1])
+        xB = min(depth_box[2], yolo_box[2])
+        yB = min(depth_box[3], yolo_box[3])
+
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        if interArea == 0:
+            return 0.0
+
+        depthBoxArea = (depth_box[2] - depth_box[0]) * (depth_box[3] - depth_box[1])
+        if depthBoxArea == 0:
+            return 0.0
+
+        return interArea / float(depthBoxArea)
+
     def process(self, data: FrameData) -> FrameData:
-        # Placeholder — tidak mengubah data
+        fused_results = []
+
+        # Konversi YOLO detections ke format list dictionaries
+        yolo_boxes = []
+        for det in data.detections:
+            yolo_boxes.append({
+                "bbox": det.bbox, # xyxy
+                "class_name": det.class_name
+            })
+
+        for obs in data.obstacles:
+            # Depth obstacle format: bbox is [x, y, w, h]
+            x, y, w, h = obs["bbox"]
+            obs_box = [x, y, x + w, y + h]
+            dist = obs["distance_m"]
+            zone = obs["zone"]
+            
+            best_overlap = 0.0
+            best_class = "obstacle"
+            
+            for yb in yolo_boxes:
+                overlap = self._calculate_overlap_ratio(obs_box, yb["bbox"])
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_class = yb["class_name"]
+            
+            # Membutuhkan setidaknya setengah (50%) dari depth box tertutupi yolo box
+            final_class = best_class if best_overlap > 0.5 else "obstacle"
+            
+            # Recalculate Priority based on Safety Matrix
+            priority = 3
+            if final_class == "person":
+                if dist < 1.0:
+                    priority = 0
+                elif dist < 3.0:
+                    priority = 2
+            else:
+                if dist < 1.0:
+                    priority = 1
+                else:
+                    priority = 3
+            
+            fused_results.append({
+                "object_class": final_class,
+                "distance_m": dist,
+                "zone": zone,
+                "priority": priority,
+                "bbox": [x, y, w, h],
+                "action": "STOP" if priority == 0 else None
+            })
+            
+        data.fused_output = fused_results
         return data
 
 

@@ -189,7 +189,11 @@ class CameraThread(QThread):
                     result.depth_colormap if result.depth_colormap is not None else np.zeros_like(color_bgr)
                 )
 
-                if result.obstacles:
+                if result.fused_output:
+                    dist = result.fused_output[0].get("distance_m")
+                    obj_class = result.fused_output[0].get("object_class", "obstacle")
+                    label = f"Terdeteksi: {obj_class}"
+                elif result.obstacles:
                     dist = result.obstacles[0].get("distance_m")
                     label = "Objek Terdeteksi"
                 else:
@@ -204,7 +208,11 @@ class CameraThread(QThread):
 
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
             self.distance_info_ready.emit(label, dist)
-            self.obstacles_ready.emit(result.obstacles if self._processor is not None else [])
+            
+            final_obstacles = []
+            if self._processor is not None:
+                final_obstacles = result.fused_output if result.fused_output else result.obstacles
+            self.obstacles_ready.emit(final_obstacles)
             
             # Delta Sleep to maintain FPS without double blocking
             elapsed_ms = int((time.time() - start_time) * 1000)
