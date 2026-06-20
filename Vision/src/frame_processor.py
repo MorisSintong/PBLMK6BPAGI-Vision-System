@@ -32,6 +32,10 @@ try:
 except ImportError:
     YOLOWrapper = None  # type: ignore[misc,assignment]
 
+from logging_config import get_logger
+
+_logger = get_logger(__name__)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # FrameData — struktur data yang mengalir antar stage
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -69,7 +73,7 @@ class FrameData:
                         DIISI OLEH: YOLODetectionStage (R2).
                         DIKONSUMSI OLEH: FusionStage (R4).
 
-                        Format per detection:
+                        Format: List[Detection] (dataclass dari yolowrapper.py)
                         {
                             "bbox":        [x1, y1, x2, y2],  # format xyxy
                             "class_id":    int,                # indeks kelas COCO
@@ -155,8 +159,7 @@ class PipelineStage(ABC):
         try:
             result = self.process(data)
         except Exception as e:
-            from logging_config import get_logger
-            get_logger(__name__).error(f"Stage {self.name} failed: {e}")
+            _logger.error(f"Stage {self.name} failed: {e}")
             data.errors.append(f"{self.name} failed: {e}")
             result = data
             

@@ -14,6 +14,7 @@
 | 🟠 High | 4 | Bug fungsional yang mengganggu kerja |
 | 🟡 Medium | 4 | Masalah performa atau reliability |
 | 🔵 Low | 4 | Kualitas kode dan maintainability |
+| ⚠️ Review | 5 | ✅ All FIXED |
 
 ---
 
@@ -269,6 +270,74 @@
 
 ---
 
+## ⚠️ Review Concerns — Post-Fix Analysis
+
+> Concerns yang diidentifikasi setelah review solusi di branch `fix/audit-issues`.
+
+### C5: YOLO FP16 Optimization — Unverified Claim
+- **File**: `Vision/src/yolowrapper.py:59`
+- **Masalah**: 
+  - `half=True` ditambahkan dengan klaim "2x GPU speedup"
+  - Benchmark menunjukkan FP16 **3% lebih lambat** dari FP32 di RTX A4000 Laptop
+  - Model kecil (6MB) — overhead FP16 conversion melebihi compute savings
+- **Impact**: Performance regression (minor), misleading documentation
+- **Status**: ✅ FIXED — Removed `half=True` flag. FP32 is optimal for small models on laptop GPUs.
+
+---
+
+### C1: Decimation Filter Removal — Performance Risk
+- **File**: `Vision/src/camera_thread.py:111-115`
+- **Masalah**: 
+  - `decimation_filter` dihapus untuk menghindari INTER_NEAREST artifacts
+  - Tapi ini berarti **4x lebih banyak depth pixels** untuk diproses (~307K vs ~77K)
+  - `obstacle_detector.py` dan `frame_processor.py` sekarang handle lebih banyak data
+- **Impact**: Frame rate drops di hardware rendah (laptop integrated GPU)
+- **Status**: ✅ FIXED — Decimation now configurable via `camera_config.py` (default: OFF). When enabled, uses `INTER_LINEAR` instead of `INTER_NEAREST` for better quality resize.
+
+---
+
+### C2: YOLO Detection Format — R4 Coordination Required
+- **File**: `Vision/src/frame_processor.py:297`
+- **Masalah**: 
+  ```python
+  # Gunakan dataclass secara langsung
+  data.detections = detections  # List[Detection], bukan List[Dict]
+  ```
+  - `YOLODetectionStage` sekarang return `List[Detection]` (dataclass)
+  - R4's FusionStage mungkin masih expect `List[Dict]`
+- **Impact**: FusionStage menerima format salah → runtime error
+- **Status**: ✅ FIXED — `FrameData.detections` type hint updated to `List[Any]` with documentation. Contract documented in FrameData docstring.
+
+---
+
+### C3: Empty QImage — DepthView Must Handle
+- **File**: `Vision/src/camera_thread.py:183, 214`
+- **Masalah**: 
+  ```python
+  depth_pixmap = QImage()  # Empty QImage, bukan None
+  ```
+  - Webcam fallback path sekarang emit `QImage()` (empty) bukan `None`
+  - `DepthView.update_frames()` mungkin tidak handle empty QImage
+- **Impact**: Potential crash atau visual artifacts di DepthView
+- **Status**: ✅ FIXED — Added `isNull()` check in `DepthView.update_frames()` for both RGB and depth images.
+
+---
+
+### C4: Lazy Import in Exception Handler
+- **File**: `Vision/src/frame_processor.py:158`
+- **Masalah**: 
+  ```python
+  except Exception as e:
+      from logging_config import get_logger  # import setiap error
+      get_logger(__name__).error(...)
+  ```
+  - Import dilakukan di dalam exception handler (dipanggil setiap stage gagal)
+  - `get_logger` sudah available di module scope
+- **Impact**: Minor performance overhead saat stage gagal
+- **Status**: ✅ FIXED — Moved `get_logger` import to module level, created `_logger` instance.
+
+---
+
 ## 🎯 Prioritas Perbaikan
 
 ### Immediate (Sebelum Demo Berikutnya)
@@ -285,6 +354,13 @@
 7. ✅ #8 Performance optimization (R1) — FIXED
 8. ✅ #11 Thread safety (R1) — FIXED
 9. ✅ #12 Package structure (R6) — FIXED
+
+### Post-Merge Review Concerns
+10. ✅ C5: YOLO FP16 benchmark verification (R2) — FIXED
+11. ✅ C1: Decimation filter configurable (R3) — FIXED
+12. ✅ C2: YOLO format coordination with R4 (R4) — FIXED
+13. ✅ C3: Empty QImage handling in DepthView (R6) — FIXED
+14. ✅ C4: Lazy import cleanup (R1) — FIXED
 
 ---
 

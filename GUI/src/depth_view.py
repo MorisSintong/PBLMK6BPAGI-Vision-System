@@ -62,14 +62,14 @@ class DepthView(QWidget):
         Menerima QImage dari camera_thread (thread-safe), lalu
         dikonversi ke QPixmap di main thread untuk ditampilkan.
         """
-        if rgb_image is not None:
+        if rgb_image is not None and not rgb_image.isNull():
             rgb_pixmap = QPixmap.fromImage(rgb_image)
             self.label_rgb.setPixmap(rgb_pixmap)
             self.label_rgb.setScaledContents(True)
             self.label_overlay_rgb.setPixmap(rgb_pixmap)
             self.label_overlay_rgb.setScaledContents(True)
 
-        if depth_image is not None:
+        if depth_image is not None and not depth_image.isNull():
             depth_pixmap = QPixmap.fromImage(depth_image)
             self.label_depth.setPixmap(depth_pixmap)
             self.label_depth.setScaledContents(True)

@@ -56,7 +56,6 @@ class YOLOWrapper:
             imgsz=self.input_size,
             conf=self.conf_threshold,
             device=self._device,
-            half=True if self._device != "cpu" else False,
             verbose=False,
         )
 

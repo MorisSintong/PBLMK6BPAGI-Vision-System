@@ -20,6 +20,13 @@ except ImportError:
     DEPTH_MIN_M = 0.3
     DISPLAY_FPS = 30
 
+try:
+    from camera_config import CameraConfig
+    _cam_config = CameraConfig()
+    ENABLE_DECIMATION = _cam_config.enable_decimation
+except ImportError:
+    ENABLE_DECIMATION = False
+
 if TYPE_CHECKING:
     from frame_processor import FrameProcessor
 
@@ -111,13 +118,17 @@ class CameraThread(QThread):
         depth_sensor = profile.get_device().first_depth_sensor()
         self._depth_scale = depth_sensor.get_depth_scale()
 
-        # --- INISIALISASI FILTER KAMERA DEPTH (Tetap dipertahankan) ---
-        # Removed decimation_filter to prevent downscaling and nearest-neighbor resize artifacts
+        # --- INISIALISASI FILTER KAMERA DEPTH ---
+        if ENABLE_DECIMATION:
+            self._decimation_filter = rs.decimation_filter()
+            self._decimation_filter.set_option(rs.option.filter_magnitude, _cam_config.decimation_magnitude)
+        else:
+            self._decimation_filter = None
         
         self._spatial_filter = rs.spatial_filter()
-        self._spatial_filter.set_option(rs.option.filter_magnitude, 2)
-        self._spatial_filter.set_option(rs.option.filter_smooth_alpha, 0.5)
-        self._spatial_filter.set_option(rs.option.filter_smooth_delta, 20)
+        self._spatial_filter.set_option(rs.option.filter_magnitude, _cam_config.spatial_magnitude)
+        self._spatial_filter.set_option(rs.option.filter_smooth_alpha, _cam_config.spatial_smooth_alpha)
+        self._spatial_filter.set_option(rs.option.filter_smooth_delta, _cam_config.spatial_smooth_delta)
         
         self._temporal_filter = rs.temporal_filter()
         self._hole_filling_filter = rs.hole_filling_filter()
@@ -155,7 +166,8 @@ class CameraThread(QThread):
                 continue
 
             # --- APLIKASI FILTER KAMERA DEPTH ---
-            # decimation_filter dihilangkan untuk mempertahankan resolusi asli dan menghindari resize blocky
+            if self._decimation_filter is not None:
+                depth_frame = self._decimation_filter.process(depth_frame)
             depth_frame = self._spatial_filter.process(depth_frame)
             depth_frame = self._temporal_filter.process(depth_frame)
             depth_frame = self._hole_filling_filter.process(depth_frame)
@@ -165,8 +177,9 @@ class CameraThread(QThread):
             color_bgr = np.asanyarray(color_frame.get_data())
             depth_raw = np.asanyarray(depth_frame.get_data())
 
-            # Removed cv2.resize to prevent INTER_NEAREST artifacts
-            # depth_raw is now natively 640x480 aligned with color_bgr
+            # Resize only if decimation was applied (depth resolution reduced)
+            if self._decimation_filter is not None and depth_raw.shape != color_bgr.shape[:2]:
+                depth_raw = cv2.resize(depth_raw, (color_bgr.shape[1], color_bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
 
             # Fitur Moris yang dikembalikan: Pipeline Integration
             if self._processor is not None:
