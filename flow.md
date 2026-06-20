@@ -42,8 +42,11 @@ The `CameraThread` hands the NumPy arrays to the `FrameProcessor`. The processor
 * It draws the premium HUD visuals (corner brackets, dark text plates, zone ticks) onto the RGB frame.
 
 ### Stage C: `FusionStage` (Data Merging)
-* *Current capability:* Merges the raw depth arrays with YOLO's bounding boxes to coordinate logic if necessary.
-* *Future capability:* Merging the semantic data from YOLO with the spatial data from the Depth sensor to confidently say "Person at 1.5m".
+* Matches each depth obstacle blob to a YOLO detection using overlap ratio (`intersection / depth_area_px`).
+* Uses `area_px` (contour area) instead of bounding box area to avoid AABB inflation on irregular shapes.
+* Assigns semantic class ("person", "chair") when overlap > 50%, otherwise defaults to "obstacle".
+* Recalculates priority using `DetectionConfig.danger_distance` (configurable via GUI).
+* Outputs `FrameData.fused_output` with format: `{object_class, distance_m, zone, priority, bbox (xyxy), action}`.
 
 ---
 
@@ -53,7 +56,7 @@ Once the `FrameProcessor` finishes the pipeline, the data must be safely sent fr
 1. **QImage Conversion:** The NumPy arrays are converted to Qt `QImage` objects. To prevent memory segmentation faults (where Python garbage-collects the array while the GUI is trying to draw it), the thread calls `.tobytes()`. This creates an isolated, safe memory copy.
 2. **Emission:** The thread emits three critical signals:
    * `frame_pair_ready(QImage, QImage)`
-   * `distance_info_ready(str, float)`
+   * `distance_info_ready(str, float, str)` — label, distance, zone
    * `obstacles_ready(list)`
 3. **Delta Sleep Optimizer:** Before restarting the loop, the thread calculates exactly how many milliseconds the processing took, and sleeps *only* the remaining time required to maintain 30 FPS. This prevents CPU hogging and double-blocking.
 

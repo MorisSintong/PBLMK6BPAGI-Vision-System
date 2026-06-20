@@ -10,11 +10,12 @@
 
 | Severity | Jumlah | Deskripsi |
 |----------|--------|-----------|
-| 🔴 Critical | 3 | Akan menyebabkan crash atau data loss |
-| 🟠 High | 4 | Bug fungsional yang mengganggu kerja |
-| 🟡 Medium | 4 | Masalah performa atau reliability |
-| 🔵 Low | 4 | Kualitas kode dan maintainability |
+| 🔴 Critical | 4 | Akan menyebabkan crash atau data loss |
+| 🟠 High | 7 | Bug fungsional yang mengganggu kerja |
+| 🟡 Medium | 6 | Masalah performa atau reliability |
+| 🔵 Low | 5 | Kualitas kode dan maintainability |
 | ⚠️ Review | 5 | ✅ All FIXED |
+| 🔧 FusionStage | 8 | ✅ All FIXED |
 
 ---
 
@@ -364,6 +365,16 @@
 12. ✅ C2: YOLO format coordination with R4 (R4) — FIXED
 13. ✅ C3: Empty QImage handling in DepthView (R6) — FIXED
 14. ✅ C4: Lazy import cleanup (R1) — FIXED
+
+### FusionStage Implementation Bugs (20 Juni 2026)
+15. ✅ F1: FusionStage never added to pipeline (Critical) — FIXED
+16. ✅ F2: Output bbox format mismatch [x,y,w,h] vs [x1,y1,x2,y2] (High) — FIXED
+17. ✅ F3: Priority thresholds hardcoded, ignores DetectionConfig (High) — FIXED
+18. ✅ F4: Zone not passed to AlertPanel (High) — FIXED
+19. ✅ F5: Result variable fragile scope (Medium) — FIXED
+20. ✅ F6: Radar angle_deg never computed (Medium) — FIXED
+21. ✅ F7: Stale PLACEHOLDER comment (Low) — FIXED
+22. ✅ F8: No tests for FusionStage (Low) — FIXED
 
 ---
 
