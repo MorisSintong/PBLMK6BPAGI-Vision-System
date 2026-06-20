@@ -18,11 +18,11 @@ Modul GUI bertanggung jawab untuk:
 
 | File | Fungsi |
 |---|---|
-| `main_window.py` | Menyusun layout utama, menghubungkan sinyal antar-panel, dan mengelola `CameraThread`. |
-| `depth_view.py` | Area display kamera dengan 3 mode: RGB, Depth, dan Overlay (side-by-side). |
-| `controls_panel.py` | Tombol Start/Stop kamera dan tombol pemilihan mode tampilan. |
-| `Alert_panel.py` | Menampilkan info objek/jarak serta perubahan warna sesuai threshold. |
-| `radar_view.py` | Widget radar visual (komponen visual terpisah, tidak selalu dipakai di layout utama saat ini). |
+| `main_window.py` | Menyusun layout utama, menghubungkan sinyal *type-safe* antar-panel, dan me-routing konfigurasi GUI ke core pipeline di `CameraThread`. |
+| `depth_view.py` | Area display dengan 3 mode: RGB, Depth, dan Overlay. Menangani empty fallback frames `QImage.isNull()` dengan stabil. |
+| `controls_panel.py` | Kontrol kamera utama dan pengaturan jarak alert dinamis (mengirim sinyal threshold langsung ke Vision pipeline). |
+| `Alert_panel.py` | Menampilkan info objek/jarak serta perubahan warna sesuai status threshold (DANGER/WARN/SAFE). |
+| `radar_view.py` | Widget radar visual yang terhubung ke data resolusi spatial via `obstacles_ready` signal. |
 
 ## Konfigurasi (`inc`)
 
@@ -33,8 +33,8 @@ Modul GUI bertanggung jawab untuk:
 
 ## Alur Singkat GUI
 
-1. User klik **Start** di `ControlsPanel`.
-2. `main_window.py` menerima sinyal dan menjalankan `CameraThread`.
-3. Frame RGB/Depth dari `CameraThread` dikirim ke `DepthView.update_frames(...)`.
-4. User bisa ganti mode display ke RGB/Depth/Overlay dari tombol mode.
-5. Jika ada error kamera, status di panel kontrol diperbarui.
+1. User berinteraksi dengan **Start/Stop** atau **Threshold Sliders** di `ControlsPanel`.
+2. `main_window.py` menghubungkan input ini dan mengirimkannya ke `CameraThread` dan `FrameProcessor`.
+3. Frame *memory-safe* (`QImage`) dan notifikasi status dari Vision pipeline dikirim melalui emit signal.
+4. `DepthView` memeriksa integritas *image buffer* dan me-render visual overlay (seperti HUD bounding box) ke layar.
+5. `RadarView` dan `AlertPanel` memperbarui UI secara real-time dari data spasial obstacle.

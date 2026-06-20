@@ -18,10 +18,11 @@ Modul Vision bertanggung jawab untuk:
 
 | File | Fungsi |
 |---|---|
-| `camera_thread.py` | Worker thread utama untuk capture kamera. Prioritas RealSense (`pyrealsense2`), fallback ke OpenCV webcam. Mengirim frame ke GUI via sinyal Qt. |
-| `recorder.py` | Utilitas uji/rekam stream RealSense (color + depth) secara mandiri. |
-| `obstacle_detector.py` | Kelas deteksi obstacle berbasis ROI dan threshold depth (siap dipakai/integrasi lanjutan). |
-| `frame_processor.py` | Placeholder untuk pipeline pemrosesan frame lanjutan. |
+| `camera_thread.py` | Worker thread utama untuk capture kamera. Memiliki Delta Sleep optimizer untuk performa maksimal. Mengirim frame yang *memory-safe* ke GUI via sinyal Qt. |
+| `frame_processor.py` | Engine utama pipeline vision. Mengimplementasi *Chain of Responsibility* (YOLO, Depth, Fusion) yang berjalan pada setiap frame dengan pelacakan error robust. |
+| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference object detection. Mendukung optimasi FP16 di GPU. |
+| `obstacle_detector.py` | Modul yang mengekstrak informasi jarak dan prioritas menggunakan HUD visual overlay premium. |
+| `recorder.py` | Utilitas uji/rekam stream RealSense secara mandiri. Memiliki flag *mutex* agar tidak crash dengan pipeline utama. |
 
 ## Konfigurasi (`inc`)
 
@@ -33,10 +34,11 @@ Modul Vision bertanggung jawab untuk:
 ## Alur Singkat Kamera Saat Ini
 
 1. `CameraThread.start_capture()` dipanggil dari GUI.
-2. Thread mencoba inisialisasi RealSense (color + depth stream).
-3. Jika gagal, thread fallback ke webcam OpenCV.
-4. Frame dikonversi ke `QPixmap` lalu dipancarkan ke GUI (`frame_pair_ready`).
-5. `DepthView` di GUI menampilkan frame sesuai mode yang dipilih user.
+2. Thread mengambil frame dari hardware (RealSense atau OpenCV fallback).
+3. Frame diproses oleh `FrameProcessor` melalui rangkaian *PipelineStage* (mis: Deteksi YOLO, Ekstraksi Depth).
+4. Hasil komputasi dan draw layer dikemas dalam objek `FrameData`.
+5. Frame hasil dikonversi ke format `QImage` (menggunakan byte copying untuk thread safety) dan dipancarkan ke GUI.
+6. `CameraThread` melakukan Delta Sleep untuk mempertahankan stabil 30 FPS tanpa menyebabkan lonjakan CPU usage.
 
 ## Catatan Pengembangan
 
