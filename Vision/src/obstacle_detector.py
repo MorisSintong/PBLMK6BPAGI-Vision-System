@@ -70,18 +70,18 @@ class ObstacleDetector:
         np.multiply(depth_frame, depth_scale, out=self._depth_buffer, casting="unsafe")
         depth_meter = self._depth_buffer
 
-        # Pembagian 3 Zona
+        # Pembagian 3 Zona (HUD Ticks instead of full lines)
         zone_width = width // 3
-        cv2.line(
-            annotated_frame, (zone_width, 0), (zone_width, height), (255, 255, 255), 2
-        )
-        cv2.line(
-            annotated_frame,
-            (zone_width * 2, 0),
-            (zone_width * 2, height),
-            (255, 255, 255),
-            2,
-        )
+        tick_len = 25
+        tick_color = (200, 200, 200)
+        
+        # Kiri boundary
+        cv2.line(annotated_frame, (zone_width, 0), (zone_width, tick_len), tick_color, 2)
+        cv2.line(annotated_frame, (zone_width, height - tick_len), (zone_width, height), tick_color, 2)
+        
+        # Kanan boundary
+        cv2.line(annotated_frame, (zone_width * 2, 0), (zone_width * 2, tick_len), tick_color, 2)
+        cv2.line(annotated_frame, (zone_width * 2, height - tick_len), (zone_width * 2, height), tick_color, 2)
 
         # Mask area yang dianggap obstacle dalam rentang jarak
         obstacle_mask = (
@@ -130,29 +130,56 @@ class ObstacleDetector:
                 # Hitung prioritas
                 priority = round(1 / max(distance, 0.01), 2)
 
-                # Tentukan warna dan status
+                # Tentukan warna dan status (Warna HUD Premium)
                 if distance < danger_threshold:
-                    color = (0, 0, 255)  # Merah (DANGER)
+                    color = (60, 60, 255)  # Soft Red
                     global_status = "DANGER"
                 elif distance < warning_threshold:
-                    color = (0, 255, 255)  # Kuning (WARN)
+                    color = (0, 165, 255)  # Amber
                     if global_status != "DANGER":
                         global_status = "WARN"
                 else:
-                    color = (0, 255, 0)  # Hijau (SAFE)
+                    color = (50, 205, 50)  # Lime Green
 
-                label = f"{zone_str.upper()}: {distance:.2f} m | P:{priority}"
+                # Label yang lebih minimalis: [L] 1.50m
+                label = f"[{zone_str.upper()[0]}] {distance:.2f}m"
 
-                # Gambar Bounding Box dan Teks
-                cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), color, 2)
+                # Gambar Bounding Box (HUD Corner Brackets)
+                bracket_len = max(5, min(w, h, 40) // 4)
+                thick = 3
+                # Top Left
+                cv2.line(annotated_frame, (x, y), (x + bracket_len, y), color, thick)
+                cv2.line(annotated_frame, (x, y), (x, y + bracket_len), color, thick)
+                # Top Right
+                cv2.line(annotated_frame, (x + w, y), (x + w - bracket_len, y), color, thick)
+                cv2.line(annotated_frame, (x + w, y), (x + w, y + bracket_len), color, thick)
+                # Bottom Left
+                cv2.line(annotated_frame, (x, y + h), (x + bracket_len, y + h), color, thick)
+                cv2.line(annotated_frame, (x, y + h), (x, y + h - bracket_len), color, thick)
+                # Bottom Right
+                cv2.line(annotated_frame, (x + w, y + h), (x + w - bracket_len, y + h), color, thick)
+                cv2.line(annotated_frame, (x + w, y + h), (x + w, y + h - bracket_len), color, thick)
+
+                # Teks dengan Background Plate
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 0.6
+                thickness = 2
+                (text_w, text_h), baseline = cv2.getTextSize(label, font, scale, thickness)
+                text_y = y - 8
+                
+                # Gambar background (dark slate)
+                cv2.rectangle(annotated_frame, (x, text_y - text_h - 4), (x + text_w, text_y + 4), (30, 30, 30), -1)
+                
+                # Teks dengan Anti-Aliasing
                 cv2.putText(
                     annotated_frame,
                     label,
-                    (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    (x, text_y),
+                    font,
+                    scale,
                     color,
-                    2,
+                    thickness,
+                    cv2.LINE_AA,
                 )
 
                 # Format data SESUAI KONTRAK dengan FrameData
@@ -167,22 +194,34 @@ class ObstacleDetector:
                     }
                 )
 
-        # Tampilkan Status Global di Pojok
+        # Tampilkan Status Global di Pojok dengan HUD Panel
         if global_status == "DANGER":
-            status_color = (0, 0, 255)
+            status_color = (60, 60, 255)
         elif global_status == "WARN":
-            status_color = (0, 255, 255)
+            status_color = (0, 165, 255)
         else:
-            status_color = (0, 255, 0)
+            status_color = (50, 205, 50)
+
+        status_text = f"SYS: {global_status}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.8
+        thickness = 2
+        (text_w, text_h), baseline = cv2.getTextSize(status_text, font, scale, thickness)
+        sx, sy = 25, 45
+        
+        # Background panel + outline
+        cv2.rectangle(annotated_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), (30, 30, 30), -1)
+        cv2.rectangle(annotated_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), status_color, 1)
 
         cv2.putText(
             annotated_frame,
-            f"STATUS: {global_status}",
-            (30, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
+            status_text,
+            (sx, sy),
+            font,
+            scale,
             status_color,
-            2,
+            thickness,
+            cv2.LINE_AA,
         )
 
         # Thread-safe assignment
