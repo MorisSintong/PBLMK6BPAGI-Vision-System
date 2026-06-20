@@ -31,6 +31,7 @@
       # detect() returns (annotated_frame, obstacles_list), bukan hanya obstacles
   ```
 - **Impact**: Stage membuang annotated frame dan reconstruct depth_colormap dari raw data (wasted computation)
+- **Status**: ✅ FALSE ALARM — Stage correctly uses annotated frame (line 252) AND generates depth_colormap separately (different purpose)
 - **Fix**: 
   1. Update `DepthProcessingStage.process()` untuk use returned annotated frame
   2. Atau ubah `detect()` contract untuk return obstacles saja
@@ -99,6 +100,7 @@
   - `FrameRecorder` membuat `rs.pipeline()` sendiri di line 14
   - RealSense SDK HANYA MENGIZINKAN 1 pipeline per device
 - **Impact**: Jika `FrameRecorder.start()` dipanggil saat `CameraThread` running → crash "RuntimeError: Frame didn't arrive within 1000ms"
+- **Status**: ✅ FIXED — Added `_active_pipeline_count` flag to `FrameRecorder` to prevent concurrent pipeline access
 - **Fix**: 
   1. Share single pipeline antara CameraThread dan FrameRecorder
   2. Atau gunakan mutex lock untuk akses pipeline
@@ -154,6 +156,7 @@
   - `radar_view.py` punya method `update_obstacles()`
   - Tapi **TIDAK PERNAH** dipanggil dari `main_window.py`
 - **Impact**: Radar display menampilkan data static/kosong, bukan real-time obstacles
+- **Status**: ✅ FIXED — Added `obstacles_ready` signal to CameraThread. Connected via `_on_obstacles_ready()` with angle conversion from bbox position.
 - **Fix**: 
   1. Connect `distance_info_ready` signal ke `radar_view.update_obstacles()`
   2. Atau tambah signal baru dari FrameProcessor untuk radar data
