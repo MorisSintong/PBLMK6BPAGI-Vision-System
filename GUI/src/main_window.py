@@ -8,7 +8,7 @@ from controls_panel import ControlsPanel
 from depth_view import DepthView
 from radar_view import RadarView
 from detection_config import DetectionConfig
-from frame_processor import FrameProcessor, YOLODetectionStage
+from frame_processor import FrameProcessor, FusionStage, YOLODetectionStage
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QMainWindow,
@@ -87,6 +87,9 @@ class MainWindow(QMainWindow):
             self.frame_processor.add_stage(
                 YOLODetectionStage(model_path=str(best_model_path))
             )
+
+        # ── Add FusionStage (R4) ────────────────────────────────────
+        self.frame_processor.add_stage(FusionStage(config=config))
 
         # ── Kamera thread ─────────────────────────────────────────────
         self.camera_thread = CameraThread(

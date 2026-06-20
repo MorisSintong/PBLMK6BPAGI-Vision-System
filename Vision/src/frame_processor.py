@@ -314,35 +314,51 @@ class YOLODetectionStage(PipelineStage):
 class FusionStage(PipelineStage):
     """Stage fusi RGB (YOLO) + Depth.
 
-    PLACEHOLDER — akan diimplementasikan oleh Role 4 (Sensor Fusion Engineer).
+    Menggabungkan deteksi YOLO (class_name) dengan obstacle depth (distance_m)
+    menggunakan overlap ratio untuk mencocokkan blob depth ke object YOLO.
 
     Kontrak input:   FrameData.detections (dari R2) + FrameData.obstacles (dari R3)
-                     + FrameData.depth_frame
     Kontrak output:  FrameData.fused_output (List[Dict])
 
-    Format per item (WAJIB):
+    Format per item:
         {
             "object_class":  str,               # dari R2 (e.g. "person")
             "distance_m":    float,             # dari R3 depth (meter)
             "zone":          "left"|"center"|"right",
             "priority":      int,               # 0 = paling bahaya (person dekat)
-            "bbox":          [x1, y1, x2, y2],  # bounding box final
-            "action":        str | None,         # "STOP", "BELOK KANAN", "BELOK KIRI", None
+            "bbox":          [x1, y1, x2, y2],  # bounding box final (xyxy)
+            "action":        str | None,         # "STOP" atau None
         }
 
-    Aturan prioritas (WAJIB):
-        - Person dalam jarak < 1m  -> priority 0 (STOP)
-        - Obstacle dalam jarak < 1m -> priority 1
-        - Person dalam jarak < 3m  -> priority 2
-        - Lainnya                   -> priority 3+
-        - Jika tidak ada obstacle   -> list kosong []
+    Aturan prioritas:
+        - Person dalam jarak < danger_distance  -> priority 0 (STOP)
+        - Obstacle dalam jarak < danger_distance -> priority 1
+        - Person dalam jarak < 3m               -> priority 2
+        - Lainnya                                -> priority 3+
+        - Jika tidak ada obstacle                -> list kosong []
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: Optional[DetectionConfig] = None) -> None:
         super().__init__("FusionStage")
+        self._config = config
 
-    def _calculate_overlap_ratio(self, depth_box: List[int], yolo_box: List[int]) -> float:
-        """Hitung porsi area dari depth_box yang tertutupi oleh yolo_box."""
+    def _calculate_overlap_ratio(
+        self,
+        depth_box: List[int],
+        yolo_box: List[int],
+        depth_area_px: Optional[int] = None,
+    ) -> float:
+        """Hitung porsi area dari depth_box yang tertutupi oleh yolo_box.
+
+        Menggunakan depth_area_px (cv2.contourArea) sebagai denominator
+        jika tersedia, karena boundingRect area bisa lebih besar dari
+        area kontur aktual untuk bentuk tidak beraturan (AABB inflation).
+
+        Args:
+            depth_box:     [x1, y1, x2, y2] depth obstacle bbox
+            yolo_box:      [x1, y1, x2, y2] YOLO detection bbox
+            depth_area_px: luas aktual kontur depth (dari ObstacleDetector.area_px)
+        """
         xA = max(depth_box[0], yolo_box[0])
         yA = max(depth_box[1], yolo_box[1])
         xB = min(depth_box[2], yolo_box[2])
@@ -352,7 +368,12 @@ class FusionStage(PipelineStage):
         if interArea == 0:
             return 0.0
 
-        depthBoxArea = (depth_box[2] - depth_box[0]) * (depth_box[3] - depth_box[1])
+        # Gunakan contour area jika tersedia, fallback ke AABB area
+        if depth_area_px and depth_area_px > 0:
+            depthBoxArea = depth_area_px
+        else:
+            depthBoxArea = (depth_box[2] - depth_box[0]) * (depth_box[3] - depth_box[1])
+
         if depthBoxArea == 0:
             return 0.0
 
@@ -369,47 +390,54 @@ class FusionStage(PipelineStage):
                 "class_name": det.class_name
             })
 
+        # Ambil threshold dari config
+        danger_dist = self._config.danger_distance if self._config else 1.0
+
         for obs in data.obstacles:
             # Depth obstacle format: bbox is [x, y, w, h]
             x, y, w, h = obs["bbox"]
             obs_box = [x, y, x + w, y + h]
             dist = obs["distance_m"]
             zone = obs["zone"]
-            
+            area_px = obs.get("area_px")
+
             best_overlap = 0.0
             best_class = "obstacle"
-            
+
             for yb in yolo_boxes:
-                overlap = self._calculate_overlap_ratio(obs_box, yb["bbox"])
+                overlap = self._calculate_overlap_ratio(obs_box, yb["bbox"], depth_area_px=area_px)
                 if overlap > best_overlap:
                     best_overlap = overlap
                     best_class = yb["class_name"]
-            
-            # Membutuhkan setidaknya setengah (50%) dari depth box tertutupi yolo box
+
+            # Membutuhkan setidaknya 50% dari depth box tertutupi yolo box
             final_class = best_class if best_overlap > 0.5 else "obstacle"
-            
+
             # Recalculate Priority based on Safety Matrix
             priority = 3
             if final_class == "person":
-                if dist < 1.0:
+                if dist < danger_dist:
                     priority = 0
                 elif dist < 3.0:
                     priority = 2
             else:
-                if dist < 1.0:
+                if dist < danger_dist:
                     priority = 1
                 else:
                     priority = 3
-            
+
+            # Konversi bbox ke format xyxy untuk output
+            x1, y1, x2, y2 = x, y, x + w, y + h
+
             fused_results.append({
                 "object_class": final_class,
                 "distance_m": dist,
                 "zone": zone,
                 "priority": priority,
-                "bbox": [x, y, w, h],
+                "bbox": [x1, y1, x2, y2],
                 "action": "STOP" if priority == 0 else None
             })
-            
+
         data.fused_output = fused_results
         return data
 

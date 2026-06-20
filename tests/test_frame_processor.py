@@ -119,6 +119,136 @@ def test_custom_stage():
     print("  PASS  test_custom_stage")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FusionStage Tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from dataclasses import dataclass
+from typing import List
+
+@dataclass
+class MockDetection:
+    """Mock Detection dataclass matching yolowrapper.Detection format."""
+    class_id: int
+    class_name: str
+    confidence: float
+    bbox: List[int]  # [x1, y1, x2, y2]
+
+
+def _make_frame_data(detections=None, obstacles=None):
+    """Helper to create FrameData with mock detections and obstacles."""
+    rgb = np.full((480, 640, 3), 128, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb)
+    data.detections = detections or []
+    data.obstacles = obstacles or []
+    return data
+
+
+def test_fusion_matching():
+    """YOLO box fully covers depth blob → class should be assigned."""
+    fusion = FusionStage()
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    result = fusion.process(data)
+    assert len(result.fused_output) == 1
+    assert result.fused_output[0]["object_class"] == "person"
+    print("  PASS  test_fusion_matching")
+
+
+def test_fusion_no_match():
+    """No YOLO overlap → falls back to 'obstacle'."""
+    fusion = FusionStage()
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[500, 500, 600, 600])
+    obs = {"bbox": [10, 10, 50, 50], "distance_m": 2.0, "zone": "left", "area_px": 2500, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    result = fusion.process(data)
+    assert result.fused_output[0]["object_class"] == "obstacle"
+    print("  PASS  test_fusion_no_match")
+
+
+def test_fusion_priority_person_close():
+    """Person < danger_distance → priority 0 (STOP)."""
+    config = DetectionConfig()
+    config.danger_distance = 1.0
+    fusion = FusionStage(config=config)
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.8, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    result = fusion.process(data)
+    assert result.fused_output[0]["priority"] == 0
+    assert result.fused_output[0]["action"] == "STOP"
+    print("  PASS  test_fusion_priority_person_close")
+
+
+def test_fusion_priority_obstacle_close():
+    """Non-person obstacle < danger_distance → priority 1."""
+    config = DetectionConfig()
+    config.danger_distance = 1.0
+    fusion = FusionStage(config=config)
+    det = MockDetection(class_id=1, class_name="chair", confidence=0.8, bbox=[100, 100, 300, 400])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.5, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    result = fusion.process(data)
+    assert result.fused_output[0]["priority"] == 1
+    assert result.fused_output[0]["action"] is None
+    print("  PASS  test_fusion_priority_obstacle_close")
+
+
+def test_fusion_empty_inputs():
+    """Empty detections and obstacles → empty fused_output."""
+    fusion = FusionStage()
+    data = _make_frame_data(detections=[], obstacles=[])
+    result = fusion.process(data)
+    assert result.fused_output == []
+    print("  PASS  test_fusion_empty_inputs")
+
+
+def test_fusion_bbox_format_xyxy():
+    """Output bbox should be [x1, y1, x2, y2], not [x, y, w, h]."""
+    fusion = FusionStage()
+    obs = {"bbox": [100, 200, 50, 60], "distance_m": 1.5, "zone": "right", "area_px": 3000, "priority": 1.0}
+    data = _make_frame_data(detections=[], obstacles=[obs])
+    result = fusion.process(data)
+    bbox = result.fused_output[0]["bbox"]
+    # xyxy: [x1, y1, x1+w, y1+h] = [100, 200, 150, 260]
+    assert bbox == [100, 200, 150, 260], f"Expected [100, 200, 150, 260], got {bbox}"
+    print("  PASS  test_fusion_bbox_format_xyxy")
+
+
+def test_fusion_overlap_ratio_with_area_px():
+    """When area_px is provided, it should be used instead of AABB area."""
+    fusion = FusionStage()
+    # Depth blob: L-shape, bbox [0,0,10,10] (AABB=100), but contour area is 60
+    # YOLO box fully covers: [0,0,10,10]
+    # With AABB: ratio = 100/100 = 1.0
+    # With area_px: ratio = 60/60 = 1.0 (same here since YOLO covers all)
+    # More interesting: YOLO partially covers [0,0,5,10] (50px intersection)
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[0, 0, 5, 10])
+    obs = {"bbox": [0, 0, 10, 10], "distance_m": 1.5, "zone": "center", "area_px": 60, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    result = fusion.process(data)
+    # intersection=50, area_px=60 → ratio=0.833 > 0.5 → should match
+    assert result.fused_output[0]["object_class"] == "person"
+    print("  PASS  test_fusion_overlap_ratio_with_area_px")
+
+
+def test_fusion_config_thresholds():
+    """Priority should use DetectionConfig.danger_distance, not hardcoded 1.0."""
+    config = DetectionConfig()
+    config.danger_distance = 2.0  # Non-default
+    fusion = FusionStage(config=config)
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
+    # Distance 1.5m: above old hardcoded 1.0, below new config 2.0
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 1.5, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    result = fusion.process(data)
+    # With danger_distance=2.0, person at 1.5m should be priority 0
+    assert result.fused_output[0]["priority"] == 0, f"Expected 0, got {result.fused_output[0]['priority']}"
+    assert result.fused_output[0]["action"] == "STOP"
+    print("  PASS  test_fusion_config_thresholds")
+
+
 if __name__ == "__main__":
     print("=== FrameProcessor Tests ===\n")
     tests = [
@@ -130,6 +260,14 @@ if __name__ == "__main__":
         ("threshold update", test_threshold_update),
         ("latency report", test_latency_report),
         ("custom stage", test_custom_stage),
+        ("fusion matching", test_fusion_matching),
+        ("fusion no match", test_fusion_no_match),
+        ("fusion priority person close", test_fusion_priority_person_close),
+        ("fusion priority obstacle close", test_fusion_priority_obstacle_close),
+        ("fusion empty inputs", test_fusion_empty_inputs),
+        ("fusion bbox format xyxy", test_fusion_bbox_format_xyxy),
+        ("fusion overlap with area_px", test_fusion_overlap_ratio_with_area_px),
+        ("fusion config thresholds", test_fusion_config_thresholds),
     ]
     passed = failed = 0
     for name, fn in tests:

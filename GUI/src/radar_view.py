@@ -156,10 +156,11 @@ class RadarView(QWidget):
         p.drawEllipse(QPointF(cx, cy), 3, 3)
 
         # ── 11. Obstacle Blips ────────────────────────────────────────
+        ZONE_TO_ANGLE = {"left": 45, "center": 90, "right": 135}
         for obs in self._obstacles:
-            angle_deg = obs.get("angle_deg", 90)
+            zone = obs.get("zone", "center")
+            angle_deg = obs.get("angle_deg") or ZONE_TO_ANGLE.get(zone.upper(), 90)
             distance_m = obs.get("distance_m", 0)
-            zone = obs.get("zone", "CENTER")
 
             dist_frac = min(distance_m / RADAR_MAX_DEPTH, 1.0)
             bx = cx + dist_frac * r * math.cos(math.radians(180 - angle_deg))
