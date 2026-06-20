@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 from alert_panel import AlertPanel
 from camera_thread import CameraThread
@@ -73,22 +74,19 @@ class MainWindow(QMainWindow):
         self.frame_processor = FrameProcessor(config)
 
         # ── Add YOLO stage (R2) ──────────────────────────────────────
-        yolo_model = os.path.join(
-            os.path.dirname(__file__), "..", "..", "Vision", "models", "yolov8n.pt"
-        )
-        if os.path.exists(yolo_model):
+        project_root = Path(__file__).resolve().parent.parent.parent
+        yolo_model_path = project_root / "Vision" / "models" / "yolov8n.pt"
+        best_model_path = project_root / "Vision" / "models" / "security_best.pt"
+        
+        if yolo_model_path.exists():
             self.frame_processor.add_stage(
-                YOLODetectionStage(model_path=yolo_model)
+                YOLODetectionStage(model_path=str(yolo_model_path))
             )
-        else:
+        elif best_model_path.exists():
             # Fallback to security_best.pt
-            yolo_model = os.path.join(
-                os.path.dirname(__file__), "..", "..", "Vision", "models", "security_best.pt"
+            self.frame_processor.add_stage(
+                YOLODetectionStage(model_path=str(best_model_path))
             )
-            if os.path.exists(yolo_model):
-                self.frame_processor.add_stage(
-                    YOLODetectionStage(model_path=yolo_model)
-                )
 
         # ── Kamera thread ─────────────────────────────────────────────
         self.camera_thread = CameraThread(
@@ -111,6 +109,9 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         self.controls_panel.thresholds_changed.connect(
             self.alert_panel.set_thresholds
+        )
+        self.controls_panel.thresholds_changed.connect(
+            self.frame_processor.set_action_thresholds
         )
         self.controls_panel.camera_start_requested.connect(
             self._on_camera_start

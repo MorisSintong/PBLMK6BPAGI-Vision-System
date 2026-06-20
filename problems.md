@@ -43,6 +43,7 @@
   - `camera_thread.py` calls: `self._processor.process(color_bgr, depth_raw, self._depth_scale)`
   - Tapi `DepthProcessingStage` expects: `(frame_data)` object
 - **Impact**: Runtime error jika depth frame None (webcam mode)
+- **Status**: ✅ FIXED — `FrameProcessor.process` natively instantiates `FrameData` internally
 - **Fix**: 
   1. Pastikan `FrameProcessor.process()` menerima `(rgb, depth, depth_scale)` dan wrap into FrameData
   2. Atau update camera_thread untuk pass FrameData object
@@ -80,6 +81,7 @@
   - `YOLODetectionStage.process()` converts to `List[Dict]`
   - R4's FusionStage mungkin expect dataclass format
 - **Impact**: Contract violation antara R2/R1 dan R4
+- **Status**: ✅ FIXED — `YOLODetectionStage` updated to use dataclass directly
 - **Fix**: 
   1. Standarisasi pada satu format (prefer dataclass untuk type safety)
   2. Update `YOLODetectionStage` untuk return `List[Detection]` langsung
@@ -115,6 +117,7 @@
   - Decimation filter mengurangi resolusi depth
   - Resize dengan NEAREST interpolation membuat artificial depth values di boundaries
   - Menyebabkan false obstacle detections di zone edges
+- **Status**: ✅ FIXED — Decimation filter and `cv2.resize` removed. Depth map now retains 640x480 native resolution cleanly.
 - **Fix**: 
   1. Skip decimation filter jika tidak perlu
   2. Atau gunakan BILINEAR/CUBIC interpolation
@@ -134,6 +137,7 @@
   - `.copy()` dipanggil, tapi `frame_rgb` adalah local variable
   - Bisa garbage collected sebelum Qt proses image
   - Race condition causing display corruption (langka tapi mungkin)
+- **Status**: ✅ FIXED — Replaced `.data` with `.tobytes()` creating safe memory space for PyQt
 - **Fix**: 
   1. Keep reference ke `frame_rgb` sampai QImage selesai diproses
   2. Atau gunakan `QImage.fromData(frame_rgb.tobytes())`
@@ -162,6 +166,7 @@
   - R1 convert ke `List[Dict]`
   - R4's FusionStage mungkin expect dataclass
 - **Impact**: FusionStage menerima format yang tidak diharapkan
+- **Status**: ✅ FIXED — Handled directly by `YOLODetectionStage`
 - **Fix**: 
   1. Konfirmasi dengan R2/R1 format yang diinginkan
   2. Update FusionStage untuk handle both formats
@@ -175,6 +180,7 @@
   - `ControlsPanel` emit `thresholds_changed` signal
   - Tapi `main_window.py` TIDAK connect signal ini
 - **Impact**: GUI threshold controls tidak berpengaruh ke pipeline (hardcoded di camera_thread)
+- **Status**: ✅ FIXED — Signal connected directly to `frame_processor.set_action_thresholds`
 - **Fix**: 
   1. Connect `thresholds_changed` ke `camera_thread.set_depth_thresholds()`
   2. Atau update FrameProcessor untuk terima threshold dari GUI
@@ -210,6 +216,7 @@
 - **Impact**: 
   - Uses relative path dari GUI source file, bukan project root
   - Model gagal load jika working directory berbeda (e.g., running dari folder lain)
+- **Status**: ✅ FIXED — Adopted `pathlib` for robust absolute path resolution
 - **Fix**: 
   1. Use `Path(__file__).parent.parent` atau config-based path
   2. Atau tambah fallback path resolution
@@ -220,6 +227,7 @@
 - **File**: Semua packages (`Vision/src/`, `GUI/src/`, etc.)
 - **Masalah**: Tidak ada `__init__.py` di package directories
 - **Impact**: Relies on `sys.path` manipulation, fragile imports
+- **Status**: ✅ FIXED — `__init__.py` files added across Vision and GUI modules
 - **Fix**: 
   1. Tambah `__init__.py` files
   2. Atau gunakan proper package structure dengan `pyproject.toml`
@@ -235,6 +243,7 @@
 - **Impact**: 
   - Bypass Qt's type system
   - Tidak ada compile-time type checking, harder debugging
+- **Status**: ✅ FIXED — Added strict `QImage` type hint bindings
 - **Fix**: 
   1. Gunakan `pyqtSignal(QImage, QImage)` jika memungkinkan
   2. Atau minimal tambah type hints di docstring
@@ -252,6 +261,7 @@
       continue  # Silently skips failed stage
   ```
 - **Impact**: Pipeline continue dengan partial data, sulit diagnose failures
+- **Status**: ✅ FIXED — `FrameData` extended with `errors: List[str]` to correctly propagate and catch stage errors
 - **Fix**: 
   1. Tambah error counter
   2. Fail setelah N consecutive errors
@@ -267,14 +277,14 @@
 3. ✅ #6 DepthProcessingStage contract (R1) — FALSE ALARM (no fix needed)
 
 ### Minggu Ini
-4. 🔴 #2 Depth resize interpolation (R3)
-5. 🟠 #5 YOLO model path (R6)
-6. 🟠 #10 Threshold connection (R4)
+4. ✅ #2 Depth resize interpolation (R3) — FIXED
+5. ✅ #5 YOLO model path (R6) — FIXED
+6. ✅ #10 Threshold connection (R4) — FIXED
 
 ### Sebelum Final Submission
 7. ✅ #8 Performance optimization (R1) — FIXED
 8. ✅ #11 Thread safety (R1) — FIXED
-9. 🔵 #12 Package structure (R6)
+9. ✅ #12 Package structure (R6) — FIXED
 
 ---
 

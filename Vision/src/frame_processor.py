@@ -100,10 +100,11 @@ class FrameData:
     depth_scale: float = 0.001
 
     obstacles: List[Dict[str, Any]] = field(default_factory=list)
-    detections: List[Dict[str, Any]] = field(default_factory=list)
+    detections: List[Any] = field(default_factory=list)
     fused_output: List[Dict[str, Any]] = field(default_factory=list)
 
     metadata: Dict[str, Any] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)
 
     def has_depth(self) -> bool:
         return self.depth_frame is not None
@@ -151,7 +152,14 @@ class PipelineStage(ABC):
             return data
 
         t0 = time.perf_counter()
-        result = self.process(data)
+        try:
+            result = self.process(data)
+        except Exception as e:
+            from logging_config import get_logger
+            get_logger(__name__).error(f"Stage {self.name} failed: {e}")
+            data.errors.append(f"{self.name} failed: {e}")
+            result = data
+            
         self._last_latency_ms = (time.perf_counter() - t0) * 1000.0
         return result
 
@@ -198,6 +206,11 @@ class DepthProcessingStage(PipelineStage):
         self._depth_min_m = depth_min_m
         self._depth_max_m = depth_max_m
         self._detector.max_distance_m = depth_max_m
+
+    def set_action_thresholds(self, warning: float, danger: float) -> None:
+        """Update threshold aksi (dipanggil dari GUI)."""
+        self.warning_threshold = warning
+        self.danger_threshold = danger
 
     def process(self, data: FrameData) -> FrameData:
         if not data.has_depth():
@@ -284,15 +297,8 @@ class YOLODetectionStage(PipelineStage):
 
         detections = self._wrapper.detect(data.rgb_frame)
 
-        data.detections = [
-            {
-                "bbox": d.bbox,
-                "class_id": d.class_id,
-                "class_name": d.class_name,
-                "confidence": d.confidence,
-            }
-            for d in detections
-        ]
+        # Gunakan dataclass secara langsung
+        data.detections = detections
 
         return data
 
@@ -410,6 +416,14 @@ class FrameProcessor:
     def set_depth_thresholds(self, depth_min_m: float, depth_max_m: float) -> None:
         """Update threshold depth untuk depth stage (dipanggil dari GUI)."""
         self._depth_stage.set_thresholds(depth_min_m, depth_max_m)
+
+    def set_action_thresholds(self, warning: float, danger: float) -> None:
+        """Update action thresholds untuk bahaya (dipanggil dari GUI)."""
+        self._depth_stage.set_action_thresholds(warning, danger)
+        # Jika FusionStage juga butuh, pass ke sana
+        fusion_stage = self.get_stage("FusionStage")
+        if fusion_stage and hasattr(fusion_stage, "set_action_thresholds"):
+            fusion_stage.set_action_thresholds(warning, danger)
 
     # ── main processing ───────────────────────────────────────────────────
 

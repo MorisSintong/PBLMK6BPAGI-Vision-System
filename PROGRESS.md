@@ -1,6 +1,6 @@
 # Progress Report — Vision System for Security Robot
 
-> Last updated: 19 Juni 2026 (Critical Fixes + Audit)
+> Last updated: 20 Juni 2026 (Critical Fixes + Audit Resolution)
 
 ---
 
@@ -44,6 +44,14 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Radar view connection | R4 | Added `obstacles_ready` signal to CameraThread. Connected to RadarView via angle conversion from bbox position |
 | Thread safety — last_detections | R1 | Added `threading.Lock` + property getter/setter for `ObstacleDetector.last_detections` |
 | Float32 buffer reuse | R1 | Added reusable `_depth_buffer` with `np.multiply(..., out=...)` to avoid ~1.2MB allocation per frame |
+| **Audit Issues Resolution (20 Juni 2026)** | | |
+| Depth Resize Artifacts | R3 | Removed `decimation_filter` and `cv2.resize` natively eliminating blocky edges |
+| QImage Memory Safety | R1 | Replaced raw pointer `.data` with `.tobytes()` avoiding thread-based segmentation faults |
+| Alert Threshold Wiring | R6 | Piped `controls_panel.thresholds_changed` directly to `FrameProcessor.set_action_thresholds` |
+| YOLO Model Path Robustness | R6 | Switched to `pathlib.Path` for reliable absolute paths to model weights |
+| Pipeline Error Catching | R1 | Wrapped `PipelineStage._measure()` with exception handler pushing to `FrameData.errors` |
+| Python Package Structure | R6 | Included `__init__.py` files across all `Vision` and `GUI` source directories |
+| Signal Typing Strictness | R1 | Upgraded generic `object` signals in `CameraThread` to strictly typed `QImage` signals |
 | **YOLOv8 Integration (R2 + R1)** | | |
 | `YOLOWrapper` integration | R2 (Husein) + R1 | Cherry-picked `yolowrapper.py` from R2 branch. Removed torch.load security bypass. Added logging. Wired into `YOLODetectionStage` pipeline |
 | `Detection` dataclass contract | R2 | Output format `{bbox, class_id, class_name, confidence}` compatible with `FrameData.detections` for R4 (Sensor Fusion) |

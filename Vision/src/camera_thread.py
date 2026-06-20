@@ -29,7 +29,7 @@ except ImportError:
 
 
 class CameraThread(QThread):
-    frame_pair_ready = pyqtSignal(object, object)
+    frame_pair_ready = pyqtSignal(QImage, QImage)
     distance_info_ready = pyqtSignal(str, object)
     obstacles_ready = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -111,8 +111,7 @@ class CameraThread(QThread):
         self._depth_scale = depth_sensor.get_depth_scale()
 
         # --- INISIALISASI FILTER KAMERA DEPTH (Tetap dipertahankan) ---
-        self._decimation_filter = rs.decimation_filter()
-        self._decimation_filter.set_option(rs.option.filter_magnitude, 2)
+        # Removed decimation_filter to prevent downscaling and nearest-neighbor resize artifacts
         
         self._spatial_filter = rs.spatial_filter()
         self._spatial_filter.set_option(rs.option.filter_magnitude, 2)
@@ -154,7 +153,7 @@ class CameraThread(QThread):
                 continue
 
             # --- APLIKASI FILTER KAMERA DEPTH ---
-            depth_frame = self._decimation_filter.process(depth_frame)
+            # decimation_filter dihilangkan untuk mempertahankan resolusi asli dan menghindari resize blocky
             depth_frame = self._spatial_filter.process(depth_frame)
             depth_frame = self._temporal_filter.process(depth_frame)
             depth_frame = self._hole_filling_filter.process(depth_frame)
@@ -164,9 +163,8 @@ class CameraThread(QThread):
             color_bgr = np.asanyarray(color_frame.get_data())
             depth_raw = np.asanyarray(depth_frame.get_data())
 
-            # Kembalikan ukuran depth map ke 640x480 karena decimation mengecilkannya
-            if depth_raw.shape != color_bgr.shape[:2]:
-                depth_raw = cv2.resize(depth_raw, (color_bgr.shape[1], color_bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
+            # Removed cv2.resize to prevent INTER_NEAREST artifacts
+            # depth_raw is now natively 640x480 aligned with color_bgr
 
             # Fitur Moris yang dikembalikan: Pipeline Integration
             if self._processor is not None:
@@ -185,7 +183,7 @@ class CameraThread(QThread):
             else:
                 # Mode fallback jika processor tidak ada
                 rgb_pixmap = self._bgr_to_qimage(color_bgr)
-                depth_pixmap = None
+                depth_pixmap = QImage() # Use empty QImage instead of None for type safety
                 label = "Clear"
                 dist = None
 
@@ -216,7 +214,7 @@ class CameraThread(QThread):
             else:
                 rgb_pixmap = self._bgr_to_qimage(frame_bgr)
 
-            self.frame_pair_ready.emit(rgb_pixmap, None)
+            self.frame_pair_ready.emit(rgb_pixmap, QImage()) # Empty QImage instead of None
             self.distance_info_ready.emit("Depth Tidak Tersedia", None)
             self.obstacles_ready.emit([])
             self.msleep(self._frame_delay_ms)
@@ -246,7 +244,7 @@ class CameraThread(QThread):
         height, width, channels = frame_rgb.shape
         bytes_per_line = channels * width
         return QImage(
-            frame_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
+            frame_rgb.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888
         ).copy()
 
     def _release_resources(self):
