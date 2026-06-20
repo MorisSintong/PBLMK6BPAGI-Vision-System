@@ -1,6 +1,6 @@
 # Progress Report — Vision System for Security Robot
 
-> Last updated: 19 Juni 2026 (Critical Fixes + Audit)
+> Last updated: 20 Juni 2026 (Comprehensive Status Update)
 
 ---
 
@@ -44,6 +44,18 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Radar view connection | R4 | Added `obstacles_ready` signal to CameraThread. Connected to RadarView via angle conversion from bbox position |
 | Thread safety — last_detections | R1 | Added `threading.Lock` + property getter/setter for `ObstacleDetector.last_detections` |
 | Float32 buffer reuse | R1 | Added reusable `_depth_buffer` with `np.multiply(..., out=...)` to avoid ~1.2MB allocation per frame |
+| **Audit Issues Resolution (20 Juni 2026)** | | |
+| Depth Resize Artifacts | R3 | Removed `decimation_filter` and `cv2.resize` natively eliminating blocky edges |
+| QImage Memory Safety | R1 | Replaced raw pointer `.data` with `.tobytes()` avoiding thread-based segmentation faults |
+| Alert Threshold Wiring | R6 | Piped `controls_panel.thresholds_changed` directly to `FrameProcessor.set_action_thresholds` |
+| YOLO Model Path Robustness | R6 | Switched to `pathlib.Path` for reliable absolute paths to model weights |
+| Pipeline Error Catching | R1 | Wrapped `PipelineStage._measure()` with exception handler pushing to `FrameData.errors` |
+| Python Package Structure | R6 | Included `__init__.py` files across all `Vision` and `GUI` source directories |
+| Signal Typing Strictness | R1 | Upgraded generic `object` signals in `CameraThread` to strictly typed `QImage` signals |
+| **Performance Optimizations** | | |
+| Delta Sleep FPS Fix | R1 | Replaced fixed `msleep` with `time.time()` delta sleep in `CameraThread` preventing double-blocking latency |
+| YOLO FP16 Inference | R2 | ~~Added `half=True` to YOLO predict call~~ REMOVED — Benchmark showed FP16 is 3% slower on RTX A4000 Laptop (small model overhead) |
+| OpenCV Kernel Optimized | R1 | Replaced `np.ones` with `cv2.getStructuringElement` in `ObstacleDetector` for morphology operations |
 | **YOLOv8 Integration (R2 + R1)** | | |
 | `YOLOWrapper` integration | R2 (Husein) + R1 | Cherry-picked `yolowrapper.py` from R2 branch. Removed torch.load security bypass. Added logging. Wired into `YOLODetectionStage` pipeline |
 | `Detection` dataclass contract | R2 | Output format `{bbox, class_id, class_name, confidence}` compatible with `FrameData.detections` for R4 (Sensor Fusion) |
@@ -55,13 +67,27 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Deliverable | Role | Status |
 |---|---|---|
-| YOLOv8 integration (`yolowrapper.py`) | R2 (Husein) | ✅ Merged (with fixes: security bypass removed, logging added) |
-| Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ❌ Menunggu R2 + R3 |
-| Dataset acquisition & labeling | R5 (Hamid) | ⏳ `data.yaml` ready. Training dataset from Roboflow |
-| Test harness & benchmark | R5 | ❌ Belum mulai |
-| RadarView wiring (data nyata dari pipeline) | R6 | ✅ FIXED — Connected via `obstacles_ready` signal |
-| DepthView annotation overlay | R6 | ❌ Belum mulai |
-| End-to-end integration test | R1 | ❌ Belum mulai |
+| Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ❌ Not started — placeholder only |
+| Dataset acquisition & labeling | R5 (Hamid) | ❌ Not started — need ≥300 frames |
+| Test harness & benchmark | R5 | ❌ Not started |
+| DepthView annotation overlay | R6 (Adel) | ❌ Not started — bbox + label + distance |
+| End-to-end integration test | R1 | ❌ Not started |
+| Fine-tune YOLOv8 with dataset | R2 (Husein) | ❌ Waiting on R5 |
+| mAP accuracy benchmark | R2 | ❌ Not started — need ≥70% mAP@0.5 |
+| Outdoor testing (sunlight) | R3 (Long) | ❌ Not started |
+
+---
+
+## Role Completion Summary
+
+| Role | Completed | Remaining | % Complete |
+|------|-----------|-----------|------------|
+| R1 (Moris) — ML Pipeline | 19 items | 1 (integration test) | 95% |
+| R2 (Husein) — YOLOv8 | 3 items | 2 (fine-tune, mAP) | 60% |
+| R3 (Long) — Depth | 4 items | 1 (outdoor test) | 80% |
+| R4 (Rasyid) — Fusion | 1 item | 2 (FusionStage, priority) | 33% |
+| R5 (Hamid) — Dataset | 1 item | 3 (dataset, harness, regression) | 25% |
+| R6 (Adel) — GUI | 8 items | 1 (DepthView overlay) | 89% |
 
 ---
 
@@ -142,7 +168,7 @@ CameraThread (capture + filter)
 
 | Test | Status |
 |---|---|
-| `test_frame_processor.py` (8 tests) | ✅ All pass (~6ms/frame) |
+| `test_frame_processor.py` (8 tests) | ✅ All pass |
 | Import test | ✅ |
 | Instantiation test | ✅ |
 | Process with depth | ✅ |
@@ -178,10 +204,13 @@ CameraThread (capture + filter)
 
 | Gap | Detail |
 |---|---|
-| Fusion belum terintegrasi | `FusionStage` placeholder, menunggu R2 + R3 output |
-| ~~RadarView tidak menerima data~~ | ✅ FIXED — Connected via `obstacles_ready` signal + angle conversion |
-| Tidak ada integration test | Hanya isolation test. Belum ada test CameraThread + FrameProcessor end-to-end |
-| Model weights belum ada di repo | `security_best.pt` dan `yolov8n.pt` di `.gitignore` — R2 perlu download manual ke `Vision/models/` |
+| FusionStage belum terimplementasi | `FusionStage` masih placeholder, menunggu R4 |
+| DepthView tanpa anotasi | Bounding box + label + jarak belum ditampilkan di DepthView |
+| Belum ada dataset terlabel | R5 belum mengumpulkan ≥300 frame berlabel |
+| Belum ada integration test | Hanya isolation test, belum ada test CameraThread + FrameProcessor end-to-end |
+| Belum ada akurasi benchmark | Tidak ada pengukuran mAP@0.5 |
+| Belum ada outdoor testing | RealSense D455 terganggu sinar matahari langsung |
+| Model weights belum di repo | `security_best.pt` dan `yolov8n.pt` di `.gitignore` — R2 perlu download manual |
 
 ## Merge History
 

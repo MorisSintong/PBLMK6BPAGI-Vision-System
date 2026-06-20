@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from typing import TYPE_CHECKING, Optional
 
 import cv2
@@ -19,6 +20,13 @@ except ImportError:
     DEPTH_MIN_M = 0.3
     DISPLAY_FPS = 30
 
+try:
+    from camera_config import CameraConfig
+    _cam_config = CameraConfig()
+    ENABLE_DECIMATION = _cam_config.enable_decimation
+except ImportError:
+    ENABLE_DECIMATION = False
+
 if TYPE_CHECKING:
     from frame_processor import FrameProcessor
 
@@ -29,7 +37,7 @@ except ImportError:
 
 
 class CameraThread(QThread):
-    frame_pair_ready = pyqtSignal(object, object)
+    frame_pair_ready = pyqtSignal(QImage, QImage)
     distance_info_ready = pyqtSignal(str, object)
     obstacles_ready = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -110,14 +118,17 @@ class CameraThread(QThread):
         depth_sensor = profile.get_device().first_depth_sensor()
         self._depth_scale = depth_sensor.get_depth_scale()
 
-        # --- INISIALISASI FILTER KAMERA DEPTH (Tetap dipertahankan) ---
-        self._decimation_filter = rs.decimation_filter()
-        self._decimation_filter.set_option(rs.option.filter_magnitude, 2)
+        # --- INISIALISASI FILTER KAMERA DEPTH ---
+        if ENABLE_DECIMATION:
+            self._decimation_filter = rs.decimation_filter()
+            self._decimation_filter.set_option(rs.option.filter_magnitude, _cam_config.decimation_magnitude)
+        else:
+            self._decimation_filter = None
         
         self._spatial_filter = rs.spatial_filter()
-        self._spatial_filter.set_option(rs.option.filter_magnitude, 2)
-        self._spatial_filter.set_option(rs.option.filter_smooth_alpha, 0.5)
-        self._spatial_filter.set_option(rs.option.filter_smooth_delta, 20)
+        self._spatial_filter.set_option(rs.option.filter_magnitude, _cam_config.spatial_magnitude)
+        self._spatial_filter.set_option(rs.option.filter_smooth_alpha, _cam_config.spatial_smooth_alpha)
+        self._spatial_filter.set_option(rs.option.filter_smooth_delta, _cam_config.spatial_smooth_delta)
         
         self._temporal_filter = rs.temporal_filter()
         self._hole_filling_filter = rs.hole_filling_filter()
@@ -128,6 +139,7 @@ class CameraThread(QThread):
     def _run_realsense_loop(self):
         read_failures = 0  # Fitur Moris yang dikembalikan
         while self._running:
+            start_time = time.time()
             try:
                 frames = self._pipeline.wait_for_frames(timeout_ms=1000)
             except RuntimeError:
@@ -154,7 +166,8 @@ class CameraThread(QThread):
                 continue
 
             # --- APLIKASI FILTER KAMERA DEPTH ---
-            depth_frame = self._decimation_filter.process(depth_frame)
+            if self._decimation_filter is not None:
+                depth_frame = self._decimation_filter.process(depth_frame)
             depth_frame = self._spatial_filter.process(depth_frame)
             depth_frame = self._temporal_filter.process(depth_frame)
             depth_frame = self._hole_filling_filter.process(depth_frame)
@@ -164,9 +177,9 @@ class CameraThread(QThread):
             color_bgr = np.asanyarray(color_frame.get_data())
             depth_raw = np.asanyarray(depth_frame.get_data())
 
-            # Kembalikan ukuran depth map ke 640x480 karena decimation mengecilkannya
-            if depth_raw.shape != color_bgr.shape[:2]:
-                depth_raw = cv2.resize(depth_raw, (color_bgr.shape[1], color_bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
+            # Resize only if decimation was applied (depth resolution reduced)
+            if self._decimation_filter is not None and depth_raw.shape != color_bgr.shape[:2]:
+                depth_raw = cv2.resize(depth_raw, (color_bgr.shape[1], color_bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
 
             # Fitur Moris yang dikembalikan: Pipeline Integration
             if self._processor is not None:
@@ -185,18 +198,23 @@ class CameraThread(QThread):
             else:
                 # Mode fallback jika processor tidak ada
                 rgb_pixmap = self._bgr_to_qimage(color_bgr)
-                depth_pixmap = None
+                depth_pixmap = QImage() # Use empty QImage instead of None for type safety
                 label = "Clear"
                 dist = None
 
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
             self.distance_info_ready.emit(label, dist)
             self.obstacles_ready.emit(result.obstacles if self._processor is not None else [])
-            self.msleep(self._frame_delay_ms)
+            
+            # Delta Sleep to maintain FPS without double blocking
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            sleep_ms = max(1, self._frame_delay_ms - elapsed_ms)
+            self.msleep(sleep_ms)
 
     def _run_webcam_loop(self):
         read_failures = 0
         while self._running:
+            start_time = time.time()
             ok, frame_bgr = self._capture.read()
             if not ok:
                 read_failures += 1
@@ -216,10 +234,14 @@ class CameraThread(QThread):
             else:
                 rgb_pixmap = self._bgr_to_qimage(frame_bgr)
 
-            self.frame_pair_ready.emit(rgb_pixmap, None)
+            self.frame_pair_ready.emit(rgb_pixmap, QImage()) # Empty QImage instead of None
             self.distance_info_ready.emit("Depth Tidak Tersedia", None)
             self.obstacles_ready.emit([])
-            self.msleep(self._frame_delay_ms)
+            
+            # Delta Sleep to maintain FPS without hogging CPU in fallback mode
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            sleep_ms = max(1, self._frame_delay_ms - elapsed_ms)
+            self.msleep(sleep_ms)
 
     def _open_camera(self):
         if os.name == "nt":
@@ -246,7 +268,7 @@ class CameraThread(QThread):
         height, width, channels = frame_rgb.shape
         bytes_per_line = channels * width
         return QImage(
-            frame_rgb.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
+            frame_rgb.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888
         ).copy()
 
     def _release_resources(self):

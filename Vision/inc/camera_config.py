@@ -23,6 +23,7 @@ class CameraConfig:
         self.webcam_index = 0
 
         # Depth filter settings (RealSense SDK)
+        self.enable_decimation = False  # Disabled by default to preserve 640x480 resolution
         self.decimation_magnitude = 2
         self.spatial_magnitude = 2
         self.spatial_smooth_alpha = 0.5
