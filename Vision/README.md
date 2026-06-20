@@ -20,9 +20,10 @@ Modul Vision bertanggung jawab untuk:
 |---|---|
 | `camera_thread.py` | Worker thread utama untuk capture kamera. Memiliki Delta Sleep optimizer untuk performa maksimal. Mengirim frame yang *memory-safe* ke GUI via sinyal Qt. |
 | `frame_processor.py` | Engine utama pipeline vision. Mengimplementasi *Chain of Responsibility* (YOLO, Depth, Fusion) yang berjalan pada setiap frame dengan pelacakan error robust. |
-| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference object detection. Mendukung optimasi FP16 di GPU. |
+| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference object detection. Output `Detection` dataclass. |
 | `obstacle_detector.py` | Modul yang mengekstrak informasi jarak dan prioritas menggunakan HUD visual overlay premium. |
 | `recorder.py` | Utilitas uji/rekam stream RealSense secara mandiri. Memiliki flag *mutex* agar tidak crash dengan pipeline utama. |
+| `fusion.md` | Dokumentasi lengkap FusionStage: metrik overlap, bug tracking, dan fix checklist. |
 
 ## Konfigurasi (`inc`)
 

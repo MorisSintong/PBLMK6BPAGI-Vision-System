@@ -16,7 +16,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Deliverable | Role | Detail |
 |---|---|---|
-| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. `FrameData` dataclass, `PipelineStage` ABC, `DepthProcessingStage`, `YOLODetectionStage` (placeholder), `FusionStage` (placeholder). 8/8 tests pass (~6ms/frame) |
+| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. `FrameData` dataclass, `PipelineStage` ABC, `DepthProcessingStage`, `YOLODetectionStage`, `FusionStage`. 16/16 tests pass (~6ms/frame) |
 | Pipeline → CameraThread integration | R1 | CameraThread menerima `FrameProcessor`, dual path (pipeline / legacy fallback). Wiring GUI thresholds |
 | Depth filters (preprocessing) | R3 (Long) | Decimation → spatial → temporal → hole-filling di CameraThread via pyrealsense2 SDK |
 | Multi-zone obstacle detection | R3 | LEFT / CENTER / RIGHT zone. Colormap merah/kuning/hijau. Structured output `{bbox, distance_m, zone, area_px}` |
@@ -67,7 +67,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Deliverable | Role | Status |
 |---|---|---|
-| Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ❌ Not started — placeholder only |
+| Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ✅ Implemented — overlap matching, priority matrix, config thresholds, 8 tests |
 | Dataset acquisition & labeling | R5 (Hamid) | ❌ Not started — need ≥300 frames |
 | Test harness & benchmark | R5 | ❌ Not started |
 | DepthView annotation overlay | R6 (Adel) | ❌ Not started — bbox + label + distance |
@@ -85,7 +85,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | R1 (Moris) — ML Pipeline | 19 items | 1 (integration test) | 95% |
 | R2 (Husein) — YOLOv8 | 3 items | 2 (fine-tune, mAP) | 60% |
 | R3 (Long) — Depth | 4 items | 1 (outdoor test) | 80% |
-| R4 (Rasyid) — Fusion | 1 item | 2 (FusionStage, priority) | 33% |
+| R4 (Rasyid) — Fusion | 3 items | 0 (FusionStage implemented, priority done) | 100% |
 | R5 (Hamid) — Dataset | 1 item | 3 (dataset, harness, regression) | 25% |
 | R6 (Adel) — GUI | 8 items | 1 (DepthView overlay) | 89% |
 
@@ -104,7 +104,7 @@ main.py → MainWindow
                     └── FrameProcessor
                           ├── DepthProcessingStage (colormap + multi-zone)
                           ├── YOLODetectionStage (YOLOv8 via YOLOWrapper)
-                          └── FusionStage (placeholder — menunggu R2 + R3)
+                          └── FusionStage (YOLO + Depth matching, priority)
 ```
 
 ## Data Flow
@@ -130,7 +130,7 @@ CameraThread (capture + filter)
 ├── PROGRESS.md                      # Progress documentation
 ├── problems.md                      # Critical audit report + issue tracking
 ├── tests/
-│   ├── test_frame_processor.py      # Standalone pipeline tests (8/8)
+│   ├── test_frame_processor.py      # Standalone pipeline tests (16/16)
 │   ├── test_obstacle_detector.py    # ObstacleDetector tests (16 tests)
 │   └── test_camera_thread.py        # CameraThread tests (15 tests)
 ├── Vision/
@@ -140,6 +140,7 @@ CameraThread (capture + filter)
 │   │   ├── obstacle_detector.py     # Depth obstacle detection
 │   │   ├── recorder.py              # Standalone recording utility
 │   │   ├── yolowrapper.py           # YOLOv8 inference wrapper (R2)
+│   │   ├── fusion.md                # FusionStage documentation & bug tracking
 │   │   └── data.yaml                # Roboflow dataset config (3 classes)
 │   ├── models/                      # (.gitignore) Model weights directory
 │   │   ├── security_best.pt         # Trained model (not tracked)
@@ -168,7 +169,7 @@ CameraThread (capture + filter)
 
 | Test | Status |
 |---|---|
-| `test_frame_processor.py` (8 tests) | ✅ All pass |
+| `test_frame_processor.py` (16 tests) | ✅ All pass |
 | Import test | ✅ |
 | Instantiation test | ✅ |
 | Process with depth | ✅ |
@@ -177,6 +178,14 @@ CameraThread (capture + filter)
 | Threshold update | ✅ |
 | Latency report | ✅ |
 | Custom stage extensibility | ✅ |
+| Fusion matching (YOLO→depth) | ✅ |
+| Fusion no match fallback | ✅ |
+| Fusion priority person close | ✅ |
+| Fusion priority obstacle close | ✅ |
+| Fusion empty inputs | ✅ |
+| Fusion bbox format (xyxy) | ✅ |
+| Fusion overlap with area_px | ✅ |
+| Fusion config thresholds | ✅ |
 | `test_obstacle_detector.py` (16 tests) | ✅ All pass |
 | Instantiation & custom params | ✅ |
 | Detect no obstacles | ✅ |
@@ -204,7 +213,7 @@ CameraThread (capture + filter)
 
 | Gap | Detail |
 |---|---|
-| FusionStage belum terimplementasi | `FusionStage` masih placeholder, menunggu R4 |
+| FusionStage belum terimplementasi | ~~`FusionStage` masih placeholder, menunggu R4~~ ✅ IMPLEMENTED — overlap matching, priority, config thresholds |
 | DepthView tanpa anotasi | Bounding box + label + jarak belum ditampilkan di DepthView |
 | Belum ada dataset terlabel | R5 belum mengumpulkan ≥300 frame berlabel |
 | Belum ada integration test | Hanya isolation test, belum ada test CameraThread + FrameProcessor end-to-end |

@@ -128,13 +128,14 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/obstacle_detector.py` | Extend dengan hasil fusion |
+| `Vision/src/frame_processor.py` | FusionStage implementation |
+| `Vision/src/obstacle_detector.py` | Depth obstacle detection (consumed by FusionStage) |
+| `Vision/src/fusion.md` | FusionStage documentation & bug tracking |
 | YOLO wrapper (dari R2) | Konsumsi |
-| `environment.yml` | open3d (opsional) |
 
 ### Input dari
-- **Role 2** — `FrameData.detections`
-- **Role 3** — `FrameData.obstacles`
+- **Role 2** — `FrameData.detections` (List[Detection])
+- **Role 3** — `FrameData.obstacles` (List[Dict])
 
 ### Output ke
 - **Role 6** — `FrameData.fused_output` (List[Dict])
@@ -147,8 +148,8 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
         "distance_m":    float,
         "zone":          "left"|"center"|"right",
         "priority":      int,                # 0 = paling bahaya
-        "bbox":          [x1, y1, x2, y2],
-        "action":        str | None,         # "STOP", "BELOK KANAN", dll.
+        "bbox":          [x1, y1, x2, y2],  # xyxy format
+        "action":        str | None,         # "STOP" atau None
     },
     ...
 ]
@@ -157,11 +158,16 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ### Aturan prioritas
 | Kondisi | Priority |
 |---|---|
-| Person < 1m | 0 (STOP) |
-| Obstacle < 1m | 1 |
+| Person < danger_distance | 0 (STOP) |
+| Obstacle < danger_distance | 1 |
 | Person < 3m | 2 |
 | Lainnya | 3+ |
 | Tidak ada obstacle | list kosong `[]` |
+
+### Implementasi
+- **Overlap metric**: `intersection / depth_area_px` (bukan IoU — lihat `fusion.md` untuk penjelasan)
+- **Matching threshold**: 50% dari depth blob harus tertutupi YOLO box
+- **Config**: `DetectionConfig.danger_distance` digunakan untuk priority thresholds (bukan hardcoded)
 
 ### Selesai bila
 - Setiap deteksi YOLO punya jarak akurat (±10% untuk 0.5–4m)

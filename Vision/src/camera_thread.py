@@ -38,7 +38,7 @@ except ImportError:
 
 class CameraThread(QThread):
     frame_pair_ready = pyqtSignal(QImage, QImage)
-    distance_info_ready = pyqtSignal(str, object)
+    distance_info_ready = pyqtSignal(str, object, str)
     obstacles_ready = pyqtSignal(list)
     error = pyqtSignal(str)
 
@@ -182,6 +182,8 @@ class CameraThread(QThread):
                 depth_raw = cv2.resize(depth_raw, (color_bgr.shape[1], color_bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
 
             # Fitur Moris yang dikembalikan: Pipeline Integration
+            result = None
+            zone = "center"
             if self._processor is not None:
                 result = self._processor.process(color_bgr, depth_raw, self._depth_scale)
                 rgb_pixmap = self._bgr_to_qimage(result.rgb_frame)
@@ -189,8 +191,14 @@ class CameraThread(QThread):
                     result.depth_colormap if result.depth_colormap is not None else np.zeros_like(color_bgr)
                 )
 
-                if result.obstacles:
+                if result.fused_output:
+                    dist = result.fused_output[0].get("distance_m")
+                    obj_class = result.fused_output[0].get("object_class", "obstacle")
+                    zone = result.fused_output[0].get("zone", "center")
+                    label = f"Terdeteksi: {obj_class}"
+                elif result.obstacles:
                     dist = result.obstacles[0].get("distance_m")
+                    zone = result.obstacles[0].get("zone", "center")
                     label = "Objek Terdeteksi"
                 else:
                     dist = None
@@ -203,8 +211,12 @@ class CameraThread(QThread):
                 dist = None
 
             self.frame_pair_ready.emit(rgb_pixmap, depth_pixmap)
-            self.distance_info_ready.emit(label, dist)
-            self.obstacles_ready.emit(result.obstacles if self._processor is not None else [])
+            self.distance_info_ready.emit(label, dist, zone)
+            
+            final_obstacles = []
+            if self._processor is not None and result is not None:
+                final_obstacles = result.fused_output if result.fused_output else result.obstacles
+            self.obstacles_ready.emit(final_obstacles)
             
             # Delta Sleep to maintain FPS without double blocking
             elapsed_ms = int((time.time() - start_time) * 1000)
@@ -235,7 +247,7 @@ class CameraThread(QThread):
                 rgb_pixmap = self._bgr_to_qimage(frame_bgr)
 
             self.frame_pair_ready.emit(rgb_pixmap, QImage()) # Empty QImage instead of None
-            self.distance_info_ready.emit("Depth Tidak Tersedia", None)
+            self.distance_info_ready.emit("Depth Tidak Tersedia", None, "center")
             self.obstacles_ready.emit([])
             
             # Delta Sleep to maintain FPS without hogging CPU in fallback mode
