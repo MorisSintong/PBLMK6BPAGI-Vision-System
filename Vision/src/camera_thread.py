@@ -334,7 +334,7 @@ class CameraThread(QThread):
         bytes_per_line = channels * width
         return QImage(
             ref.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
-        )
+        ).copy()
 
     def _release_resources(self):
         if self._pipeline is not None:
