@@ -32,7 +32,7 @@ try:
 except ImportError:
     YOLOWrapper = None  # type: ignore[misc,assignment]
 
-from Vision.src.logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 _logger = get_logger(__name__)
 

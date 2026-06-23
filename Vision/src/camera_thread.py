@@ -10,7 +10,7 @@ import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QImage
 
-from Vision.src.logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)
 

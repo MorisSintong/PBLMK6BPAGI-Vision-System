@@ -6,7 +6,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from Vision.src.logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)
 
