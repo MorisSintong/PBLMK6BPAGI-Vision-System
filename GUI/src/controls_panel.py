@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from ui_config import DEPTH_MAX_M, DEPTH_MIN_M, THRESHOLD_DANGER, THRESHOLD_WARNING
-from styles import (
+from GUI.inc.ui_config import DEPTH_MAX_M, DEPTH_MIN_M, THRESHOLD_DANGER, THRESHOLD_WARNING
+from GUI.inc.styles import (
     STATUS_ACTIVE, STATUS_INACTIVE,
     STATUS_ERROR, STATUS_SUCCESS,
     VIEW_ACTIVE, VIEW_DEFAULT

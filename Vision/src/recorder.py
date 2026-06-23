@@ -4,7 +4,7 @@ import cv2
 import os
 import datetime
 
-from logging_config import get_logger
+from Vision.src.logging_config import get_logger
 
 logger = get_logger(__name__)
 

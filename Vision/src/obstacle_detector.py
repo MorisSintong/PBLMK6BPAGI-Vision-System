@@ -6,7 +6,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from logging_config import get_logger
+from Vision.src.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -124,108 +124,60 @@ class ObstacleDetector:
             ]
 
             if valid_depth.size > 0:
-                # Menggunakan 5th percentile agar lebih stabil
-                distance = float(np.percentile(valid_depth, 5))
+            # Buat threshold berdasarkan nilai min di ROI
+            min_val = np.min(roi_depth)
+            threshold_m = min_val + 0.30  # Toleransi 30cm
 
-                # Hitung prioritas
-                priority = round(1 / max(distance, 0.01), 2)
+            # Masking area obstacle
+            obstacle_mask = (roi_depth <= threshold_m).astype(np.uint8) * 255
 
-                # Tentukan warna dan status (Warna HUD Premium)
-                if distance < danger_threshold:
-                    color = (60, 60, 255)  # Soft Red
-                    global_status = "DANGER"
-                elif distance < warning_threshold:
-                    color = (0, 165, 255)  # Amber
-                    if global_status != "DANGER":
-                        global_status = "WARN"
-                else:
-                    color = (50, 205, 50)  # Lime Green
+            # Cari kontur menggunakan OpenCV
+            contours, _ = cv2.findContours(
+                obstacle_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
 
-                # Label yang lebih minimalis: [L] 1.50m
-                label = f"[{zone_str.upper()[0]}] {distance:.2f}m"
+            if contours:
+                # Ambil kontur terbesar berdasarkan area
+                largest_contour = max(contours, key=cv2.contourArea)
+                area = cv2.contourArea(largest_contour)
 
-                # Gambar Bounding Box (HUD Corner Brackets)
-                bracket_len = max(5, min(w, h, 40) // 4)
-                thick = 3
-                # Top Left
-                cv2.line(annotated_frame, (x, y), (x + bracket_len, y), color, thick)
-                cv2.line(annotated_frame, (x, y), (x, y + bracket_len), color, thick)
-                # Top Right
-                cv2.line(annotated_frame, (x + w, y), (x + w - bracket_len, y), color, thick)
-                cv2.line(annotated_frame, (x + w, y), (x + w, y + bracket_len), color, thick)
-                # Bottom Left
-                cv2.line(annotated_frame, (x, y + h), (x + bracket_len, y + h), color, thick)
-                cv2.line(annotated_frame, (x, y + h), (x, y + h - bracket_len), color, thick)
-                # Bottom Right
-                cv2.line(annotated_frame, (x + w, y + h), (x + w - bracket_len, y + h), color, thick)
-                cv2.line(annotated_frame, (x + w, y + h), (x + w, y + h - bracket_len), color, thick)
+                if area > self.min_area:
+                    # Geser koordinat X sesuai offset ROI
+                    x, y, w, h = cv2.boundingRect(largest_contour)
+                    x += x1
 
-                # Teks dengan Background Plate
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                scale = 0.6
-                thickness = 2
-                (text_w, text_h), baseline = cv2.getTextSize(label, font, scale, thickness)
-                text_y = y - 8
-                
-                # Gambar background (dark slate)
-                cv2.rectangle(annotated_frame, (x, text_y - text_h - 4), (x + text_w, text_y + 4), (30, 30, 30), -1)
-                
-                # Teks dengan Anti-Aliasing
-                cv2.putText(
-                    annotated_frame,
-                    label,
-                    (x, text_y),
-                    font,
-                    scale,
-                    color,
-                    thickness,
-                    cv2.LINE_AA,
-                )
+                    distance = float(min_val)
 
-                # Format data SESUAI KONTRAK dengan FrameData
-                obstacles_list.append(
-                    {
-                        "object_class": "obstacle",
-                        "bbox": [x, y, w, h],
-                        "distance_m": distance,
-                        "zone": zone_str,
-                        "priority": priority,
-                        "area_px": int(area),
-                    }
-                )
+                    # Tentukan Priority & Status
+                    if distance < danger_threshold:
+                        priority = 1.0
+                        global_status = "DANGER"
+                    elif distance < warning_threshold:
+                        priority = 2.0
+                        if global_status != "DANGER":
+                            global_status = "WARN"
+                    else:
+                        priority = 3.0
 
-        # Tampilkan Status Global di Pojok dengan HUD Panel
-        if global_status == "DANGER":
-            status_color = (60, 60, 255)
-        elif global_status == "WARN":
-            status_color = (0, 165, 255)
-        else:
-            status_color = (50, 205, 50)
+                    # Translasi zona (L/C/R) ke string untuk GUI
+                    zone_str = {"L": "left", "C": "center", "R": "right"}.get(
+                        name, "center"
+                    )
 
-        status_text = f"SYS: {global_status}"
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        scale = 0.8
-        thickness = 2
-        (text_w, text_h), baseline = cv2.getTextSize(status_text, font, scale, thickness)
-        sx, sy = 25, 45
-        
-        # Background panel + outline
-        cv2.rectangle(annotated_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), (30, 30, 30), -1)
-        cv2.rectangle(annotated_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), status_color, 1)
-
-        cv2.putText(
-            annotated_frame,
-            status_text,
-            (sx, sy),
-            font,
-            scale,
-            status_color,
-            thickness,
-            cv2.LINE_AA,
-        )
+                    # Format data SESUAI KONTRAK dengan FrameData
+                    obstacles_list.append(
+                        {
+                            "object_class": "obstacle",
+                            "bbox": [x, y, w, h],
+                            "distance_m": distance,
+                            "zone": zone_str,
+                            "priority": priority,
+                            "area_px": int(area),
+                        }
+                    )
 
         # Thread-safe assignment
         with self._detections_lock:
             self._last_detections = obstacles_list
 
-        return annotated_frame, obstacles_list
+        return rgb_frame, obstacles_list

@@ -2,19 +2,19 @@ import os
 import sys
 from pathlib import Path
 
-from alert_panel import AlertPanel
-from camera_thread import CameraThread
-from controls_panel import ControlsPanel
-from depth_view import DepthView
-from radar_view import RadarView
-from detection_config import DetectionConfig
-from frame_processor import FrameProcessor, FusionStage, YOLODetectionStage
+from GUI.src.alert_panel import AlertPanel
+from Vision.src.camera_thread import CameraThread
+from GUI.src.controls_panel import ControlsPanel
+from GUI.src.depth_view import DepthView
+from GUI.src.radar_view import RadarView
+from Vision.inc.detection_config import DetectionConfig
+from Vision.src.frame_processor import FrameProcessor, FusionStage, YOLODetectionStage, VisualAnnotationStage
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QMainWindow,
     QVBoxLayout, QWidget, QScrollArea
 )
-from styles import STATUS_INACTIVE
+from GUI.inc.styles import STATUS_INACTIVE
 
 
 class MainWindow(QMainWindow):
@@ -90,6 +90,9 @@ class MainWindow(QMainWindow):
 
         # ── Add FusionStage (R4) ────────────────────────────────────
         self.frame_processor.add_stage(FusionStage(config=config))
+
+        # ── Add VisualAnnotationStage (R5) ──────────────────────────
+        self.frame_processor.add_stage(VisualAnnotationStage(config=config))
 
         # ── Kamera thread ─────────────────────────────────────────────
         self.camera_thread = CameraThread(

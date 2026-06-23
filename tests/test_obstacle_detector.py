@@ -16,7 +16,7 @@ for sub in ["Vision/src", "Vision/inc"]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from obstacle_detector import ObstacleDetector
+from Vision.src.obstacle_detector import ObstacleDetector
 
 
 def make_color_frame(h=480, w=640):
