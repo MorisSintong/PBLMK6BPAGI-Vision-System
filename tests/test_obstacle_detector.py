@@ -143,15 +143,15 @@ def test_last_detections_updated():
     assert det.last_detections == obstacles
 
 
-def test_annotated_frame_has_status():
+def test_detect_returns_frame():
     det = ObstacleDetector(min_area=100)
     color = make_color_frame()
     depth_m = np.full((480, 640), 10.0, dtype=np.float32)
     depth_m[200:300, 280:360] = 0.5
     depth_raw = (depth_m / 0.001).astype(np.uint16)
 
-    annotated, _ = det.detect(color, depth_raw)
-    assert annotated.shape == color.shape
+    frame, _ = det.detect(color, depth_raw)
+    assert frame.shape == color.shape
 
 
 def test_output_format_contract():
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         ("min area filter", test_min_area_filter),
         ("priority no division by zero", test_priority_no_division_by_zero),
         ("last detections updated", test_last_detections_updated),
-        ("annotated frame has status", test_annotated_frame_has_status),
+        ("detect returns frame", test_detect_returns_frame),
         ("output format contract", test_output_format_contract),
         ("depth buffer reuse", test_depth_buffer_reuse),
         ("depth buffer resize on shape change", test_depth_buffer_resize_on_shape_change),
