@@ -460,6 +460,7 @@ class VisualAnnotationStage(PipelineStage):
 
         # Pilih sumber data (Fusion prioritas utama, fallback ke obstacles raw, fallback terakhir YOLO)
         items_to_draw = data.fused_output if data.fused_output else data.obstacles
+        source_is_xyxy = bool(data.fused_output)
         
         # Mode fallback YOLO only jika depth tidak aktif
         yolo_fallback_mode = False
@@ -467,6 +468,7 @@ class VisualAnnotationStage(PipelineStage):
             # Konversi YOLO detections ke dict format
             items_to_draw = []
             yolo_fallback_mode = True
+            source_is_xyxy = True
             for det in data.detections:
                 items_to_draw.append({
                     "bbox": det.bbox, # xyxy
@@ -481,20 +483,15 @@ class VisualAnnotationStage(PipelineStage):
         # 1. Gambar Bounding Boxes
         for item in items_to_draw:
             bbox = item.get("bbox")
-            if not bbox:
+            if not bbox or len(bbox) != 4:
                 continue
             
-            # Mendukung format xywh dan xyxy
-            if len(bbox) == 4:
-                # Cek apakah format xyxy (x2, y2) atau xywh
-                # Di fusion stage dan yolo fallback, outputnya adalah xyxy
-                if data.fused_output or yolo_fallback_mode:
-                    x, y, x2, y2 = bbox
-                    w, h = x2 - x, y2 - y
-                else:
-                    x, y, w, h = bbox
+            # Normalize to xywh for drawing
+            if source_is_xyxy:
+                x1, y1, x2, y2 = bbox
+                x, y, w, h = x1, y1, x2 - x1, y2 - y1
             else:
-                continue
+                x, y, w, h = bbox
 
             distance = item.get("distance_m", 99.0)
             priority = item.get("priority", 3.0)

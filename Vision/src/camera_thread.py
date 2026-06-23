@@ -195,11 +195,12 @@ class CameraThread(QThread):
         self._acq_thread.start()
 
         while self._running:
-            start_time = time.time()
             try:
                 frames_data = self._frame_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
+
+            start_time = time.time()
 
             color_bgr, depth_raw = frames_data
 
@@ -277,11 +278,12 @@ class CameraThread(QThread):
         self._acq_thread.start()
 
         while self._running:
-            start_time = time.time()
             try:
                 frame_bgr = self._frame_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
+
+            start_time = time.time()
 
             if self._processor is not None:
                 result = self._processor.process(frame_bgr, None)
@@ -323,18 +325,11 @@ class CameraThread(QThread):
 
     def _bgr_to_qimage(self, frame_bgr, is_depth=False):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        if is_depth:
-            self._current_depth_rgb = frame_rgb
-            ref = self._current_depth_rgb
-        else:
-            self._current_rgb = frame_rgb
-            ref = self._current_rgb
-
-        height, width, channels = ref.shape
+        height, width, channels = frame_rgb.shape
         bytes_per_line = channels * width
         return QImage(
-            ref.data, width, height, bytes_per_line, QImage.Format.Format_RGB888
-        ).copy()
+            frame_rgb.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888
+        )
 
     def _release_resources(self):
         if self._pipeline is not None:
