@@ -287,8 +287,7 @@ class YOLODetectionStage(PipelineStage):
                     input_size=input_size,
                 )
             except Exception as e:
-                from logging_config import get_logger
-                get_logger(__name__).warning(f"YOLO model failed to load: {e}")
+                _logger.warning(f"YOLO model failed to load: {e}")
 
     def process(self, data: FrameData) -> FrameData:
         if self._wrapper is None:

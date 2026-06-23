@@ -3,19 +3,12 @@ Tests for ObstacleDetector.
 Uses synthetic frames — no camera hardware required.
 """
 
-import os
-import sys
 import threading
 
 import numpy as np
 import pytest
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-for sub in ["Vision/src", "Vision/inc"]:
-    p = os.path.join(BASE, sub)
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
+# No sys.path insertion needed — absolute imports via PYTHONPATH
 from Vision.src.obstacle_detector import ObstacleDetector
 
 
