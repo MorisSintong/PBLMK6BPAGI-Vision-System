@@ -434,7 +434,7 @@ class FusionStage(PipelineStage):
                 "action": "STOP" if priority == 0 else None
             })
 
-        data.fused_output = fused
+        data.fused_output = fused_results
 
         return data
 

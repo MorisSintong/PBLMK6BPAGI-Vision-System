@@ -124,60 +124,26 @@ class ObstacleDetector:
             ]
 
             if valid_depth.size > 0:
-            # Buat threshold berdasarkan nilai min di ROI
-            min_val = np.min(roi_depth)
-            threshold_m = min_val + 0.30  # Toleransi 30cm
+                # Menggunakan 5th percentile agar lebih stabil
+                distance = float(np.percentile(valid_depth, 5))
 
-            # Masking area obstacle
-            obstacle_mask = (roi_depth <= threshold_m).astype(np.uint8) * 255
+                # Hitung prioritas
+                priority = round(1 / max(distance, 0.01), 2)
 
-            # Cari kontur menggunakan OpenCV
-            contours, _ = cv2.findContours(
-                obstacle_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-
-            if contours:
-                # Ambil kontur terbesar berdasarkan area
-                largest_contour = max(contours, key=cv2.contourArea)
-                area = cv2.contourArea(largest_contour)
-
-                if area > self.min_area:
-                    # Geser koordinat X sesuai offset ROI
-                    x, y, w, h = cv2.boundingRect(largest_contour)
-                    x += x1
-
-                    distance = float(min_val)
-
-                    # Tentukan Priority & Status
-                    if distance < danger_threshold:
-                        priority = 1.0
-                        global_status = "DANGER"
-                    elif distance < warning_threshold:
-                        priority = 2.0
-                        if global_status != "DANGER":
-                            global_status = "WARN"
-                    else:
-                        priority = 3.0
-
-                    # Translasi zona (L/C/R) ke string untuk GUI
-                    zone_str = {"L": "left", "C": "center", "R": "right"}.get(
-                        name, "center"
-                    )
-
-                    # Format data SESUAI KONTRAK dengan FrameData
-                    obstacles_list.append(
-                        {
-                            "object_class": "obstacle",
-                            "bbox": [x, y, w, h],
-                            "distance_m": distance,
-                            "zone": zone_str,
-                            "priority": priority,
-                            "area_px": int(area),
-                        }
-                    )
+                # Format data SESUAI KONTRAK dengan FrameData
+                obstacles_list.append(
+                    {
+                        "object_class": "obstacle",
+                        "bbox": [x, y, w, h],
+                        "distance_m": distance,
+                        "zone": zone_str,
+                        "priority": priority,
+                        "area_px": int(area),
+                    }
+                )
 
         # Thread-safe assignment
         with self._detections_lock:
             self._last_detections = obstacles_list
 
-        return rgb_frame, obstacles_list
+        return color_frame, obstacles_list
