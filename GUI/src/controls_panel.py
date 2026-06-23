@@ -155,7 +155,7 @@ class ControlsPanel(QWidget):
         main_layout.addStretch()
 
     def _apply_style(self):
-        from styles import GLOBAL_STYLESHEET
+        from GUI.inc.styles import GLOBAL_STYLESHEET
         self.setStyleSheet(GLOBAL_STYLESHEET)
 
     def _on_view_change(self, mode_index):
