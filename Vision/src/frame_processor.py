@@ -278,6 +278,7 @@ class YOLODetectionStage(PipelineStage):
         super().__init__("YOLODetectionStage")
         self._model_path = model_path
         self._wrapper = None
+        self._clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
 
         if YOLOWrapper is not None and model_path:
             try:
@@ -289,11 +290,30 @@ class YOLODetectionStage(PipelineStage):
             except Exception as e:
                 _logger.warning(f"YOLO model failed to load: {e}")
 
+    def _enhance_dark_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Apply CLAHE to dark frames to improve YOLO detection in low light."""
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        l_enhanced = self._clahe.apply(l)
+        enhanced = cv2.merge([l_enhanced, a, b])
+        return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+
     def process(self, data: FrameData) -> FrameData:
+        # Detect low light (always, even if YOLO model unavailable)
+        brightness = np.mean(data.rgb_frame)
+        rgb_confidence = min(brightness / 128.0, 1.0)
+        is_dark = brightness < 40
+
+        # Store confidence metadata for FusionStage
+        data.metadata["rgb_confidence"] = rgb_confidence
+        data.metadata["is_dark"] = is_dark
+
         if self._wrapper is None:
             return data
 
-        detections = self._wrapper.detect(data.rgb_frame)
+        frame_for_yolo = self._enhance_dark_frame(data.rgb_frame) if is_dark else data.rgb_frame
+
+        detections = self._wrapper.detect(frame_for_yolo)
 
         # Gunakan dataclass secara langsung
         data.detections = detections
@@ -388,6 +408,11 @@ class FusionStage(PipelineStage):
         # Ambil threshold dari config
         danger_dist = self._config.danger_distance if self._config else 1.0
 
+        # Adaptive confidence: in dark conditions, trust depth more, lower overlap threshold
+        rgb_confidence = data.metadata.get("rgb_confidence", 1.0)
+        is_dark = data.metadata.get("is_dark", False)
+        overlap_threshold = 0.3 if (is_dark or rgb_confidence < 0.5) else 0.5
+
         for obs in data.obstacles:
             # Depth obstacle format: bbox is [x, y, w, h]
             x, y, w, h = obs["bbox"]
@@ -399,14 +424,16 @@ class FusionStage(PipelineStage):
             best_overlap = 0.0
             best_class = "obstacle"
 
-            for yb in yolo_boxes:
-                overlap = self._calculate_overlap_ratio(obs_box, yb["bbox"], depth_area_px=area_px)
-                if overlap > best_overlap:
-                    best_overlap = overlap
-                    best_class = yb["class_name"]
+            if not is_dark:
+                # Normal lighting: match YOLO to depth
+                for yb in yolo_boxes:
+                    overlap = self._calculate_overlap_ratio(obs_box, yb["bbox"], depth_area_px=area_px)
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_class = yb["class_name"]
 
-            # Membutuhkan setidaknya 50% dari depth box tertutupi yolo box
-            final_class = best_class if best_overlap > 0.5 else "obstacle"
+            # Dark: skip YOLO matching, default to "obstacle"
+            final_class = best_class if best_overlap > overlap_threshold else "obstacle"
 
             # Recalculate Priority based on Safety Matrix
             priority = 3

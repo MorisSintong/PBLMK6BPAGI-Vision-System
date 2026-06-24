@@ -246,6 +246,129 @@ def test_fusion_config_thresholds():
     print("  PASS  test_fusion_config_thresholds")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Dark Mode Tests — CLAHE + Confidence Fallback
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_yolo_stage_dark_frame_detection():
+    """Dark frame (brightness < 40) should set is_dark=True and rgb_confidence low."""
+    stage = YOLODetectionStage()  # No model, skips YOLO inference
+    rgb_dark = np.full((480, 640, 3), 10, dtype=np.uint8)  # brightness=10
+    data = FrameData(rgb_frame=rgb_dark)
+    data = stage.process(data)
+    assert data.metadata["is_dark"] == True
+    assert data.metadata["rgb_confidence"] < 0.5
+    print("  PASS  test_yolo_stage_dark_frame_detection")
+
+
+def test_yolo_stage_bright_frame_detection():
+    """Bright frame should set is_dark=False and rgb_confidence high."""
+    stage = YOLODetectionStage()
+    rgb_bright = np.full((480, 640, 3), 180, dtype=np.uint8)  # brightness=180
+    data = FrameData(rgb_frame=rgb_bright)
+    data = stage.process(data)
+    assert data.metadata["is_dark"] == False
+    assert data.metadata["rgb_confidence"] > 0.5
+    print("  PASS  test_yolo_stage_bright_frame_detection")
+
+
+def test_clahe_enhances_dark_frame():
+    """CLAHE should increase mean brightness of a dark frame."""
+    stage = YOLODetectionStage()
+    dark = np.random.randint(5, 30, (480, 640, 3), dtype=np.uint8)
+    enhanced = stage._enhance_dark_frame(dark)
+    # CLAHE in LAB space should boost the L channel
+    assert enhanced.mean() > dark.mean(), f"Enhanced {enhanced.mean():.1f} should be brighter than dark {dark.mean():.1f}"
+    print("  PASS  test_clahe_enhances_dark_frame")
+
+
+def test_fusion_dark_mode_skips_yolo_matching():
+    """In dark mode, FusionStage skips YOLO matching — all obstacles default to 'obstacle'."""
+    fusion = FusionStage()
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data.metadata["is_dark"] = True
+    data.metadata["rgb_confidence"] = 0.1
+    result = fusion.process(data)
+    # Even though YOLO found a "person", dark mode should default to "obstacle"
+    assert result.fused_output[0]["object_class"] == "obstacle"
+    print("  PASS  test_fusion_dark_mode_skips_yolo_matching")
+
+
+def test_fusion_normal_mode_matches_yolo():
+    """In normal lighting, FusionStage should match YOLO to depth."""
+    fusion = FusionStage()
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data.metadata["is_dark"] = False
+    data.metadata["rgb_confidence"] = 0.9
+    result = fusion.process(data)
+    # Normal mode should match "person"
+    assert result.fused_output[0]["object_class"] == "person"
+    print("  PASS  test_fusion_normal_mode_matches_yolo")
+
+
+def test_fusion_dim_mode_lower_threshold():
+    """Dim mode uses lower overlap threshold (0.3) via rgb_confidence."""
+    fusion = FusionStage()
+    # Depth blob: bbox [0,0,100,100] area_px=8000
+    # YOLO box partially covers: [0,0,40,100] → intersection=4000, ratio=0.5
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[0, 0, 40, 100])
+    obs = {"bbox": [0, 0, 100, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    # Dim frame: rgb_confidence < 0.5 triggers lower threshold (0.3)
+    data.metadata["is_dark"] = False
+    data.metadata["rgb_confidence"] = 0.3
+    result = fusion.process(data)
+    # At threshold 0.3 (triggered by low confidence), ratio=0.5 should match
+    assert result.fused_output[0]["object_class"] == "person"
+    print("  PASS  test_fusion_dim_mode_lower_threshold")
+
+
+def test_metadata_propagation_through_pipeline():
+    """is_dark and rgb_confidence should propagate from YOLO stage to Fusion stage."""
+    processor = FrameProcessor(DetectionConfig())
+    # Add YOLO stage with no model (skips inference, still runs CLAHE detection)
+    yolo_stage = YOLODetectionStage()
+    yolo_stage._wrapper = None
+    processor.add_stage(yolo_stage)
+    # Add Fusion stage
+    processor.add_stage(FusionStage())
+
+    rgb_dark = np.full((480, 640, 3), 15, dtype=np.uint8)
+    depth_m = np.full((480, 640), 2.0, dtype=np.float32)
+    depth_raw = (depth_m / 0.001).astype(np.uint16)
+
+    data = processor.process(rgb_dark, depth_raw)
+    # After YOLO stage: metadata should be set
+    assert data.metadata["is_dark"] == True
+    assert data.metadata["rgb_confidence"] < 0.5
+    # After Fusion stage: metadata should still be there
+    assert "is_dark" in data.metadata
+    assert "rgb_confidence" in data.metadata
+    print("  PASS  test_metadata_propagation_through_pipeline")
+
+
+def test_fusion_priority_obstacle_in_dark():
+    """In dark mode, obstacle at 0.5m should be priority 1 (not person priority 0)."""
+    config = DetectionConfig()
+    config.danger_distance = 1.0
+    fusion = FusionStage(config=config)
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.5, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data.metadata["is_dark"] = True
+    data.metadata["rgb_confidence"] = 0.1
+    result = fusion.process(data)
+    # Dark mode: YOLO skipped, defaults to "obstacle" class
+    # Obstacle at 0.5m (< danger_distance=1.0) → priority 1 (not 0)
+    assert result.fused_output[0]["object_class"] == "obstacle"
+    assert result.fused_output[0]["priority"] == 1
+    print("  PASS  test_fusion_priority_obstacle_in_dark")
+
+
 if __name__ == "__main__":
     print("=== FrameProcessor Tests ===\n")
     tests = [
@@ -265,6 +388,14 @@ if __name__ == "__main__":
         ("fusion bbox format xyxy", test_fusion_bbox_format_xyxy),
         ("fusion overlap with area_px", test_fusion_overlap_ratio_with_area_px),
         ("fusion config thresholds", test_fusion_config_thresholds),
+        ("yolo dark frame detection", test_yolo_stage_dark_frame_detection),
+        ("yolo bright frame detection", test_yolo_stage_bright_frame_detection),
+        ("clahe enhances dark frame", test_clahe_enhances_dark_frame),
+        ("fusion dark mode skips yolo", test_fusion_dark_mode_skips_yolo_matching),
+        ("fusion normal mode matches yolo", test_fusion_normal_mode_matches_yolo),
+        ("fusion dim mode lower threshold", test_fusion_dim_mode_lower_threshold),
+        ("metadata propagation pipeline", test_metadata_propagation_through_pipeline),
+        ("fusion priority obstacle in dark", test_fusion_priority_obstacle_in_dark),
     ]
     passed = failed = 0
     for name, fn in tests:
