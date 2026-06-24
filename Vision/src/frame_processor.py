@@ -195,11 +195,12 @@ class DepthProcessingStage(PipelineStage):
         self.danger_threshold = 1.0
         self.warning_threshold = 3.0
 
-        # Gunakan ObstacleDetector yang baru
+        # Gunakan ObstacleDetector yang baru, tapi dibatasi hanya untuk
+        # "Immediate Collision Fallback" (max 1.5 meter, area besar)
         self._detector = ObstacleDetector(
-            max_distance_m=depth_max_m,
+            max_distance_m=min(1.5, depth_max_m),
             min_distance_m=depth_min_m,
-            min_area=800,
+            min_area=3000,
         )
 
     def set_thresholds(self, depth_min_m: float, depth_max_m: float) -> None:
@@ -208,7 +209,8 @@ class DepthProcessingStage(PipelineStage):
             return
         self._depth_min_m = depth_min_m
         self._depth_max_m = depth_max_m
-        self._detector.max_distance_m = depth_max_m
+        # Tetap batasi obstacle fallback ke 1.5m maksimal
+        self._detector.max_distance_m = min(1.5, depth_max_m)
 
     def set_action_thresholds(self, warning: float, danger: float) -> None:
         """Update threshold aksi (dipanggil dari GUI)."""
@@ -541,8 +543,18 @@ class FusionStage(PipelineStage):
             if already_covered:
                 continue  # Sudah di-cover oleh YOLO detection di PASS 1
 
+            # Fallback distance limit: abaikan obstacle generik > 1.5m
+            if dist > 1.5:
+                continue
+
             # Obstacle depth-only (YOLO tidak mengenali)
-            priority = 1 if dist < danger_dist else 3
+            # Demote priority: jangan spam DANGER kecuali sangat dekat
+            if dist < 0.5:
+                priority = 1
+            elif dist < 1.0:
+                priority = 2
+            else:
+                priority = 3
 
             fused_results.append({
                 "object_class": "obstacle",

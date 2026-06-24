@@ -175,7 +175,7 @@ def test_fusion_no_match():
     fusion = FusionStage()
     # YOLO at (500,400,600,470) — no depth there. Depth obstacle at (10,10,50,50)
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[500, 400, 600, 470])
-    obs = {"bbox": [10, 10, 50, 50], "distance_m": 2.0, "zone": "left", "area_px": 2500, "priority": 1.0}
+    obs = {"bbox": [10, 10, 50, 50], "distance_m": 1.0, "zone": "left", "area_px": 2500, "priority": 1.0}
     data = _make_frame_data(detections=[det], obstacles=[obs])
     result = fusion.process(data)
     # YOLO detection has no depth → skipped. Only depth-only obstacle remains.
@@ -298,7 +298,7 @@ def test_fusion_dark_mode_skips_yolo_matching():
     """In dark mode, FusionStage skips YOLO matching — all obstacles default to 'obstacle'."""
     fusion = FusionStage()
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 1.0, "zone": "center", "area_px": 8000, "priority": 1.0}
     data = _make_frame_data(detections=[det], obstacles=[obs])
     data.metadata["is_dark"] = True
     data.metadata["rgb_confidence"] = 0.1
@@ -360,18 +360,18 @@ def test_metadata_propagation_through_pipeline():
 
 
 def test_fusion_priority_obstacle_in_dark():
-    """In dark mode, obstacle at 0.5m should be priority 1 (not person priority 0)."""
+    """In dark mode, obstacle at 0.4m should be priority 1 (not person priority 0)."""
     config = DetectionConfig()
     config.danger_distance = 1.0
     fusion = FusionStage(config=config)
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.5, "zone": "center", "area_px": 8000, "priority": 1.0}
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.4, "zone": "center", "area_px": 8000, "priority": 1.0}
     data = _make_frame_data(detections=[det], obstacles=[obs])
     data.metadata["is_dark"] = True
     data.metadata["rgb_confidence"] = 0.1
     result = fusion.process(data)
     # Dark mode: YOLO skipped, defaults to "obstacle" class
-    # Obstacle at 0.5m (< danger_distance=1.0) → priority 1 (not 0)
+    # Obstacle at 0.4m (< 0.5m) → priority 1
     assert result.fused_output[0]["object_class"] == "obstacle"
     assert result.fused_output[0]["priority"] == 1
     print("  PASS  test_fusion_priority_obstacle_in_dark")
