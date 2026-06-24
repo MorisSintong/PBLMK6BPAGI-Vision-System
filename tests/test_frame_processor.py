@@ -340,7 +340,8 @@ def test_metadata_propagation_through_pipeline():
     processor = FrameProcessor(DetectionConfig())
     # Add YOLO stage with no model (skips inference, still runs CLAHE detection)
     yolo_stage = YOLODetectionStage()
-    yolo_stage._wrapper = None
+    yolo_stage._wrapper_rgb = None
+    yolo_stage._wrapper_depth = None
     processor.add_stage(yolo_stage)
     # Add Fusion stage
     processor.add_stage(FusionStage())
@@ -360,21 +361,71 @@ def test_metadata_propagation_through_pipeline():
 
 
 def test_fusion_priority_obstacle_in_dark():
-    """In dark mode, obstacle at 0.4m should be priority 1 (not person priority 0)."""
+    """In dark mode, depth-only obstacle priority follows PASS 2 ladder."""
     config = DetectionConfig()
     config.danger_distance = 1.0
     fusion = FusionStage(config=config)
-    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.4, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.3, "zone": "center", "area_px": 8000, "priority": 1.0}
+    data = _make_frame_data(detections=[], obstacles=[obs])
     data.metadata["is_dark"] = True
     data.metadata["rgb_confidence"] = 0.1
     result = fusion.process(data)
-    # Dark mode: YOLO skipped, defaults to "obstacle" class
-    # Obstacle at 0.4m (< 0.5m) → priority 1
+    # PASS 2 depth-only: dist < 0.5 → priority 1
     assert result.fused_output[0]["object_class"] == "obstacle"
     assert result.fused_output[0]["priority"] == 1
     print("  PASS  test_fusion_priority_obstacle_in_dark")
+
+
+class _MockWrapper:
+    """Minimal mock for YOLOWrapper with injectable detect()."""
+    def __init__(self):
+        self._detect_fn = lambda f: []
+    def detect(self, frame):
+        return self._detect_fn(frame)
+
+
+def test_dual_model_depth_active_in_dark():
+    """When depth model available and frame is dark, active_model should be 'depth'."""
+    stage = YOLODetectionStage()
+    stage._wrapper_rgb = _MockWrapper()
+    stage._wrapper_depth = _MockWrapper()
+    stage._wrapper_depth._detect_fn = lambda f: [MockDetection(0, "person", 0.9, [100, 100, 300, 400])]
+    
+    rgb_dark = np.full((480, 640, 3), 10, dtype=np.uint8)
+    depth_colormap = np.full((480, 640, 3), 128, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb_dark, depth_colormap=depth_colormap)
+    data = stage.process(data)
+    assert data.metadata["active_model"] == "depth"
+    assert len(data.detections) == 1
+    print("  PASS  test_dual_model_depth_active_in_dark")
+
+
+def test_dual_model_rgb_active_in_light():
+    """When frame is bright, active_model should be 'rgb'."""
+    stage = YOLODetectionStage()
+    stage._wrapper_rgb = _MockWrapper()
+    stage._wrapper_depth = _MockWrapper()
+    stage._wrapper_rgb._detect_fn = lambda f: [MockDetection(0, "person", 0.9, [100, 100, 300, 400])]
+    
+    rgb_bright = np.full((480, 640, 3), 180, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb_bright)
+    data = stage.process(data)
+    assert data.metadata["active_model"] == "rgb"
+    assert len(data.detections) == 1
+    print("  PASS  test_dual_model_rgb_active_in_light")
+
+
+def test_dual_model_fallback_to_rgb_clahe():
+    """When dark but no depth model, active_model should be 'rgb_clahe'."""
+    stage = YOLODetectionStage()
+    stage._wrapper_rgb = _MockWrapper()
+    stage._wrapper_depth = None
+    
+    rgb_dark = np.full((480, 640, 3), 10, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb_dark)
+    data = stage.process(data)
+    assert data.metadata["active_model"] == "rgb_clahe"
+    print("  PASS  test_dual_model_fallback_to_rgb_clahe")
 
 
 if __name__ == "__main__":
@@ -404,6 +455,9 @@ if __name__ == "__main__":
         ("fusion dim mode lower threshold", test_fusion_dim_mode_lower_threshold),
         ("metadata propagation pipeline", test_metadata_propagation_through_pipeline),
         ("fusion priority obstacle in dark", test_fusion_priority_obstacle_in_dark),
+        ("dual model depth active in dark", test_dual_model_depth_active_in_dark),
+        ("dual model rgb active in light", test_dual_model_rgb_active_in_light),
+        ("dual model fallback to rgb_clahe", test_dual_model_fallback_to_rgb_clahe),
     ]
     passed = failed = 0
     for name, fn in tests:

@@ -75,22 +75,27 @@ class MainWindow(QMainWindow):
 
         # ── Add YOLO stage (R2) ──────────────────────────────────────
         project_root = Path(__file__).resolve().parent.parent.parent
-        yolo_model_path = project_root / "Vision" / "models" / "yolov8n.pt"
-        best_model_path = project_root / "Vision" / "models" / "security_best.pt"
+        models_dir = project_root / "Vision" / "models"
+        yolo_model_path = models_dir / "model_v3.pt"
+        depth_model_path = models_dir / "modelDepth.pt"
         yolo_model_root = project_root / "yolov8n.pt"
+        best_model_path = models_dir / "security_best.pt"
         
+        # Pick best available RGB model
+        rgb_model = None
         if yolo_model_path.exists():
-            self.frame_processor.add_stage(
-                YOLODetectionStage(model_path=str(yolo_model_path))
-            )
+            rgb_model = str(yolo_model_path)
         elif yolo_model_root.exists():
-            self.frame_processor.add_stage(
-                YOLODetectionStage(model_path=str(yolo_model_root))
-            )
+            rgb_model = str(yolo_model_root)
         elif best_model_path.exists():
-            # Fallback to security_best.pt
+            rgb_model = str(best_model_path)
+
+        if rgb_model:
             self.frame_processor.add_stage(
-                YOLODetectionStage(model_path=str(best_model_path))
+                YOLODetectionStage(
+                    model_path=rgb_model,
+                    depth_model_path=str(depth_model_path) if depth_model_path.exists() else None,
+                )
             )
 
         # ── Add FusionStage (R4) ────────────────────────────────────

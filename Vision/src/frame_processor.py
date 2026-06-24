@@ -276,21 +276,33 @@ class YOLODetectionStage(PipelineStage):
         }
     """
 
-    def __init__(self, model_path: str = "yolov8n.pt", conf_threshold: float = 0.25, input_size: int = 416) -> None:
+    def __init__(self, model_path: str = "yolov8n.pt", depth_model_path: str = None, conf_threshold: float = 0.25, input_size: int = 416) -> None:
         super().__init__("YOLODetectionStage")
         self._model_path = model_path
-        self._wrapper = None
+        self._wrapper_rgb = None
+        self._wrapper_depth = None
         self._clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
 
         if YOLOWrapper is not None and model_path:
             try:
-                self._wrapper = YOLOWrapper(
+                self._wrapper_rgb = YOLOWrapper(
                     model_path=model_path,
                     conf_threshold=conf_threshold,
                     input_size=input_size,
                 )
             except Exception as e:
-                _logger.warning(f"YOLO model failed to load: {e}")
+                _logger.warning(f"YOLO RGB model failed to load: {e}")
+
+        if YOLOWrapper is not None and depth_model_path:
+            try:
+                self._wrapper_depth = YOLOWrapper(
+                    model_path=depth_model_path,
+                    conf_threshold=conf_threshold,
+                    input_size=input_size,
+                )
+                _logger.info(f"YOLO depth model loaded: {depth_model_path}")
+            except Exception as e:
+                _logger.warning(f"YOLO depth model failed to load: {e}")
 
     def _enhance_dark_frame(self, frame: np.ndarray) -> np.ndarray:
         """Apply CLAHE to dark frames to improve YOLO detection in low light."""
@@ -310,12 +322,20 @@ class YOLODetectionStage(PipelineStage):
         data.metadata["rgb_confidence"] = rgb_confidence
         data.metadata["is_dark"] = is_dark
 
-        if self._wrapper is None:
-            return data
-
-        frame_for_yolo = self._enhance_dark_frame(data.rgb_frame) if is_dark else data.rgb_frame
-
-        detections = self._wrapper.detect(frame_for_yolo)
+        # Decide which model to use
+        if is_dark and self._wrapper_depth is not None and data.depth_colormap is not None:
+            # Dark mode: run YOLO on depth colormap
+            detections = self._wrapper_depth.detect(data.depth_colormap)
+            data.metadata["active_model"] = "depth"
+            _logger.debug("Using DEPTH model (dark mode)")
+        elif self._wrapper_rgb is not None:
+            # Normal or dim mode: run YOLO on RGB (with CLAHE if dark)
+            frame_for_yolo = self._enhance_dark_frame(data.rgb_frame) if is_dark else data.rgb_frame
+            detections = self._wrapper_rgb.detect(frame_for_yolo)
+            data.metadata["active_model"] = "rgb_clahe" if is_dark else "rgb"
+        else:
+            detections = []
+            data.metadata["active_model"] = "none"
 
         # Gunakan dataclass secara langsung
         data.detections = detections
