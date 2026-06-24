@@ -77,10 +77,15 @@ class MainWindow(QMainWindow):
         project_root = Path(__file__).resolve().parent.parent.parent
         yolo_model_path = project_root / "Vision" / "models" / "yolov8n.pt"
         best_model_path = project_root / "Vision" / "models" / "security_best.pt"
+        yolo_model_root = project_root / "yolov8n.pt"
         
         if yolo_model_path.exists():
             self.frame_processor.add_stage(
                 YOLODetectionStage(model_path=str(yolo_model_path))
+            )
+        elif yolo_model_root.exists():
+            self.frame_processor.add_stage(
+                YOLODetectionStage(model_path=str(yolo_model_root))
             )
         elif best_model_path.exists():
             # Fallback to security_best.pt
