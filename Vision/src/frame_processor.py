@@ -785,10 +785,15 @@ class FrameProcessor:
     def set_action_thresholds(self, warning: float, danger: float) -> None:
         """Update action thresholds untuk bahaya (dipanggil dari GUI)."""
         self._depth_stage.set_action_thresholds(warning, danger)
-        # Jika FusionStage juga butuh, pass ke sana
+        # Update FusionStage thresholds
         fusion_stage = self.get_stage("FusionStage")
         if fusion_stage and hasattr(fusion_stage, "set_action_thresholds"):
             fusion_stage.set_action_thresholds(warning, danger)
+        # Update VisualAnnotationStage thresholds (OpenCV view colors)
+        annotation_stage = self.get_stage("VisualAnnotationStage")
+        if annotation_stage:
+            annotation_stage._config.danger_distance = danger
+            annotation_stage._config.warning_distance = warning
 
     # ── main processing ───────────────────────────────────────────────────
 
