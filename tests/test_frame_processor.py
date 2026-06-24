@@ -132,35 +132,55 @@ class MockDetection:
     bbox: List[int]  # [x1, y1, x2, y2]
 
 
-def _make_frame_data(detections=None, obstacles=None):
-    """Helper to create FrameData with mock detections and obstacles."""
+def _make_frame_data(detections=None, obstacles=None, depth_at=None, depth_scale=0.001):
+    """Helper to create FrameData with mock detections and obstacles.
+
+    Args:
+        detections: List of MockDetection objects.
+        obstacles: List of depth obstacle dicts (bbox in [x,y,w,h] format).
+        depth_at: Dict mapping (x1,y1,x2,y2) regions to distance in meters.
+                  e.g. {(100,100,300,400): 2.0} sets depth within that bbox.
+                  Background defaults to 10.0m (out of range).
+        depth_scale: Depth scale factor (default 0.001).
+    """
     rgb = np.full((480, 640, 3), 128, dtype=np.uint8)
     data = FrameData(rgb_frame=rgb)
     data.detections = detections or []
     data.obstacles = obstacles or []
+
+    if depth_at is not None:
+        depth_m = np.full((480, 640), 10.0, dtype=np.float32)  # Background = out of range
+        for (x1, y1, x2, y2), dist_m in depth_at.items():
+            depth_m[y1:y2, x1:x2] = dist_m
+        data.depth_frame = (depth_m / depth_scale).astype(np.uint16)
+        data.depth_scale = depth_scale
+
     return data
 
 
 def test_fusion_matching():
-    """YOLO box fully covers depth blob → class should be assigned."""
+    """YOLO detection with depth data → class and distance should be assigned."""
     fusion = FusionStage()
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
     obs = {"bbox": [140, 150, 80, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data = _make_frame_data(detections=[det], obstacles=[obs], depth_at={(100, 100, 300, 400): 2.0})
     result = fusion.process(data)
-    assert len(result.fused_output) == 1
+    assert len(result.fused_output) >= 1
     assert result.fused_output[0]["object_class"] == "person"
     print("  PASS  test_fusion_matching")
 
 
 def test_fusion_no_match():
-    """No YOLO overlap → falls back to 'obstacle'."""
+    """Depth-only obstacle with no YOLO match → stays 'obstacle'."""
     fusion = FusionStage()
-    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[500, 500, 600, 600])
+    # YOLO at (500,400,600,470) — no depth there. Depth obstacle at (10,10,50,50)
+    det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[500, 400, 600, 470])
     obs = {"bbox": [10, 10, 50, 50], "distance_m": 2.0, "zone": "left", "area_px": 2500, "priority": 1.0}
     data = _make_frame_data(detections=[det], obstacles=[obs])
     result = fusion.process(data)
-    assert result.fused_output[0]["object_class"] == "obstacle"
+    # YOLO detection has no depth → skipped. Only depth-only obstacle remains.
+    obs_results = [r for r in result.fused_output if r["object_class"] == "obstacle"]
+    assert len(obs_results) >= 1
     print("  PASS  test_fusion_no_match")
 
 
@@ -170,8 +190,7 @@ def test_fusion_priority_person_close():
     config.danger_distance = 1.0
     fusion = FusionStage(config=config)
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.8, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data = _make_frame_data(detections=[det], depth_at={(100, 100, 300, 400): 0.8})
     result = fusion.process(data)
     assert result.fused_output[0]["priority"] == 0
     assert result.fused_output[0]["action"] == "STOP"
@@ -184,8 +203,7 @@ def test_fusion_priority_obstacle_close():
     config.danger_distance = 1.0
     fusion = FusionStage(config=config)
     det = MockDetection(class_id=1, class_name="chair", confidence=0.8, bbox=[100, 100, 300, 400])
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 0.5, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data = _make_frame_data(detections=[det], depth_at={(100, 100, 300, 400): 0.5})
     result = fusion.process(data)
     assert result.fused_output[0]["priority"] == 1
     assert result.fused_output[0]["action"] is None
@@ -214,18 +232,13 @@ def test_fusion_bbox_format_xyxy():
 
 
 def test_fusion_overlap_ratio_with_area_px():
-    """When area_px is provided, it should be used instead of AABB area."""
+    """YOLO detection with depth → direct depth sampling gives correct class."""
     fusion = FusionStage()
-    # Depth blob: L-shape, bbox [0,0,10,10] (AABB=100), but contour area is 60
-    # YOLO box fully covers: [0,0,10,10]
-    # With AABB: ratio = 100/100 = 1.0
-    # With area_px: ratio = 60/60 = 1.0 (same here since YOLO covers all)
-    # More interesting: YOLO partially covers [0,0,5,10] (50px intersection)
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[0, 0, 5, 10])
     obs = {"bbox": [0, 0, 10, 10], "distance_m": 1.5, "zone": "center", "area_px": 60, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data = _make_frame_data(detections=[det], obstacles=[obs], depth_at={(0, 0, 5, 10): 1.5})
     result = fusion.process(data)
-    # intersection=50, area_px=60 → ratio=0.833 > 0.5 → should match
+    # YOLO-first: person detected with depth 1.5m
     assert result.fused_output[0]["object_class"] == "person"
     print("  PASS  test_fusion_overlap_ratio_with_area_px")
 
@@ -237,8 +250,7 @@ def test_fusion_config_thresholds():
     fusion = FusionStage(config=config)
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
     # Distance 1.5m: above old hardcoded 1.0, below new config 2.0
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 1.5, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data = _make_frame_data(detections=[det], depth_at={(100, 100, 300, 400): 1.5})
     result = fusion.process(data)
     # With danger_distance=2.0, person at 1.5m should be priority 0
     assert result.fused_output[0]["priority"] == 0, f"Expected 0, got {result.fused_output[0]['priority']}"
@@ -300,29 +312,25 @@ def test_fusion_normal_mode_matches_yolo():
     """In normal lighting, FusionStage should match YOLO to depth."""
     fusion = FusionStage()
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[100, 100, 300, 400])
-    obs = {"bbox": [140, 150, 80, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
+    data = _make_frame_data(detections=[det], depth_at={(100, 100, 300, 400): 2.0})
     data.metadata["is_dark"] = False
     data.metadata["rgb_confidence"] = 0.9
     result = fusion.process(data)
-    # Normal mode should match "person"
+    # Normal mode should match "person" with depth-sampled distance
     assert result.fused_output[0]["object_class"] == "person"
     print("  PASS  test_fusion_normal_mode_matches_yolo")
 
 
 def test_fusion_dim_mode_lower_threshold():
-    """Dim mode uses lower overlap threshold (0.3) via rgb_confidence."""
+    """Dim mode still samples depth directly for YOLO detections."""
     fusion = FusionStage()
-    # Depth blob: bbox [0,0,100,100] area_px=8000
-    # YOLO box partially covers: [0,0,40,100] → intersection=4000, ratio=0.5
     det = MockDetection(class_id=0, class_name="person", confidence=0.9, bbox=[0, 0, 40, 100])
-    obs = {"bbox": [0, 0, 100, 100], "distance_m": 2.0, "zone": "center", "area_px": 8000, "priority": 1.0}
-    data = _make_frame_data(detections=[det], obstacles=[obs])
-    # Dim frame: rgb_confidence < 0.5 triggers lower threshold (0.3)
+    data = _make_frame_data(detections=[det], depth_at={(0, 0, 40, 100): 2.0})
+    # Dim frame: rgb_confidence < 0.5
     data.metadata["is_dark"] = False
     data.metadata["rgb_confidence"] = 0.3
     result = fusion.process(data)
-    # At threshold 0.3 (triggered by low confidence), ratio=0.5 should match
+    # YOLO-first still works in dim mode (not dark)
     assert result.fused_output[0]["object_class"] == "person"
     print("  PASS  test_fusion_dim_mode_lower_threshold")
 

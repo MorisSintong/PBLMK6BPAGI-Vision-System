@@ -399,70 +399,158 @@ class FusionStage(PipelineStage):
 
         return interArea / float(minArea)
 
+    def _sample_depth_in_bbox(
+        self,
+        depth_frame: np.ndarray,
+        depth_scale: float,
+        bbox: List[int],
+        min_distance_m: float = 0.3,
+        max_distance_m: float = 5.0,
+    ) -> Optional[float]:
+        """Langsung sampling kedalaman dari depth frame di dalam YOLO bbox.
+
+        Menggunakan region tengah 60% dari bbox untuk menghindari
+        piksel latar belakang di tepi bounding box.
+
+        Returns:
+            Jarak dalam meter (25th percentile), atau None jika tidak ada depth valid.
+        """
+        x1, y1, x2, y2 = bbox
+        h, w = depth_frame.shape[:2]
+
+        # Clamp ke batas frame
+        x1 = max(0, min(x1, w - 1))
+        y1 = max(0, min(y1, h - 1))
+        x2 = max(0, min(x2, w))
+        y2 = max(0, min(y2, h))
+
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        # Gunakan region tengah 60% untuk menghindari piksel tepi
+        bw, bh = x2 - x1, y2 - y1
+        margin_x = int(bw * 0.2)
+        margin_y = int(bh * 0.2)
+        cx1 = x1 + margin_x
+        cy1 = y1 + margin_y
+        cx2 = x2 - margin_x
+        cy2 = y2 - margin_y
+
+        # Fallback ke full bbox jika region terlalu kecil
+        if cx2 <= cx1 or cy2 <= cy1:
+            cx1, cy1, cx2, cy2 = x1, y1, x2, y2
+
+        region = depth_frame[cy1:cy2, cx1:cx2].astype(np.float32) * depth_scale
+        valid = region[(region >= min_distance_m) & (region <= max_distance_m)]
+
+        if valid.size == 0:
+            return None
+
+        # 25th percentile — lebih stabil dari min, lebih akurat dari median
+        return float(np.percentile(valid, 25))
+
+    def _determine_zone(self, bbox: List[int], frame_width: int) -> str:
+        """Tentukan zona horizontal (left/center/right) dari bounding box."""
+        center_x = (bbox[0] + bbox[2]) // 2
+        zone_width = frame_width // 3
+        if center_x < zone_width:
+            return "left"
+        elif center_x < zone_width * 2:
+            return "center"
+        return "right"
+
     def process(self, data: FrameData) -> FrameData:
         fused_results = []
 
-        # Konversi YOLO detections ke format list dictionaries
-        yolo_boxes = []
-        for det in data.detections:
-            yolo_boxes.append({
-                "bbox": det.bbox, # xyxy
-                "class_name": det.class_name
-            })
-
         # Ambil threshold dari config
         danger_dist = self._config.danger_distance if self._config else 1.0
+        warning_dist = self._config.warning_distance if self._config else 3.0
 
-        # Adaptive confidence: in dark conditions, trust depth more, lower overlap threshold
+        # Adaptive confidence untuk dark mode
         rgb_confidence = data.metadata.get("rgb_confidence", 1.0)
         is_dark = data.metadata.get("is_dark", False)
         overlap_threshold = 0.3 if (is_dark or rgb_confidence < 0.5) else 0.5
 
+        has_depth = data.depth_frame is not None
+        frame_width = data.rgb_frame.shape[1] if data.rgb_frame is not None else 640
+
+        # Track YOLO boxes yang sudah di-fuse (untuk avoid double-counting)
+        matched_yolo_indices = set()
+
+        # ── PASS 1: YOLO-first — setiap deteksi YOLO langsung sampling depth ──
+        if not is_dark:
+            for i, det in enumerate(data.detections):
+                yolo_bbox = det.bbox  # [x1, y1, x2, y2]
+                class_name = det.class_name
+
+                # Sampling depth langsung dari depth frame
+                dist = None
+                if has_depth:
+                    dist = self._sample_depth_in_bbox(
+                        data.depth_frame, data.depth_scale, yolo_bbox
+                    )
+
+                if dist is None:
+                    continue  # Skip YOLO detection tanpa depth data valid
+
+                matched_yolo_indices.add(i)
+
+                zone = self._determine_zone(yolo_bbox, frame_width)
+
+                # Safety Matrix Priority
+                priority = 3
+                if class_name == "person":
+                    if dist < danger_dist:
+                        priority = 0
+                    elif dist < warning_dist:
+                        priority = 2
+                else:
+                    if dist < danger_dist:
+                        priority = 1
+                    else:
+                        priority = 3
+
+                fused_results.append({
+                    "object_class": class_name,
+                    "distance_m": dist,
+                    "zone": zone,
+                    "priority": priority,
+                    "bbox": list(yolo_bbox),
+                    "action": "STOP" if priority == 0 else None,
+                })
+
+        # ── PASS 2: Depth-only obstacles — untuk hal yang YOLO tidak deteksi ──
         for obs in data.obstacles:
-            # Depth obstacle format: bbox is [x, y, w, h]
             x, y, w, h = obs["bbox"]
             obs_box = [x, y, x + w, y + h]
             dist = obs["distance_m"]
             zone = obs["zone"]
             area_px = obs.get("area_px")
 
-            best_overlap = 0.0
-            best_class = "obstacle"
+            # Cek apakah obstacle ini sudah ter-cover oleh YOLO detection
+            already_covered = False
+            for i, det in enumerate(data.detections):
+                if i in matched_yolo_indices:
+                    overlap = self._calculate_overlap_ratio(
+                        obs_box, det.bbox, depth_area_px=area_px
+                    )
+                    if overlap > overlap_threshold:
+                        already_covered = True
+                        break
 
-            if not is_dark:
-                # Normal lighting: match YOLO to depth
-                for yb in yolo_boxes:
-                    overlap = self._calculate_overlap_ratio(obs_box, yb["bbox"], depth_area_px=area_px)
-                    if overlap > best_overlap:
-                        best_overlap = overlap
-                        best_class = yb["class_name"]
+            if already_covered:
+                continue  # Sudah di-cover oleh YOLO detection di PASS 1
 
-            # Dark: skip YOLO matching, default to "obstacle"
-            final_class = best_class if best_overlap > overlap_threshold else "obstacle"
-
-            # Recalculate Priority based on Safety Matrix
-            priority = 3
-            if final_class == "person":
-                if dist < danger_dist:
-                    priority = 0
-                elif dist < 3.0:
-                    priority = 2
-            else:
-                if dist < danger_dist:
-                    priority = 1
-                else:
-                    priority = 3
-
-            # Konversi bbox ke format xyxy untuk output
-            x1, y1, x2, y2 = x, y, x + w, y + h
+            # Obstacle depth-only (YOLO tidak mengenali)
+            priority = 1 if dist < danger_dist else 3
 
             fused_results.append({
-                "object_class": final_class,
+                "object_class": "obstacle",
                 "distance_m": dist,
                 "zone": zone,
                 "priority": priority,
-                "bbox": [x1, y1, x2, y2],
-                "action": "STOP" if priority == 0 else None
+                "bbox": [x, y, x + w, y + h],
+                "action": None,
             })
 
         data.fused_output = fused_results
