@@ -22,10 +22,11 @@ except ImportError:
     DISPLAY_FPS = 30
 
 try:
-    from camera_config import CameraConfig
+    from Vision.inc.camera_config import CameraConfig
     _cam_config = CameraConfig()
     ENABLE_DECIMATION = _cam_config.enable_decimation
-except ImportError:
+except (ImportError, Exception):
+    _cam_config = None
     ENABLE_DECIMATION = False
 
 if TYPE_CHECKING:
@@ -120,16 +121,17 @@ class CameraThread(QThread):
         self._depth_scale = depth_sensor.get_depth_scale()
 
         # --- INISIALISASI FILTER KAMERA DEPTH ---
-        if ENABLE_DECIMATION:
+        if ENABLE_DECIMATION and _cam_config:
             self._decimation_filter = rs.decimation_filter()
             self._decimation_filter.set_option(rs.option.filter_magnitude, _cam_config.decimation_magnitude)
         else:
             self._decimation_filter = None
         
         self._spatial_filter = rs.spatial_filter()
-        self._spatial_filter.set_option(rs.option.filter_magnitude, _cam_config.spatial_magnitude)
-        self._spatial_filter.set_option(rs.option.filter_smooth_alpha, _cam_config.spatial_smooth_alpha)
-        self._spatial_filter.set_option(rs.option.filter_smooth_delta, _cam_config.spatial_smooth_delta)
+        if _cam_config:
+            self._spatial_filter.set_option(rs.option.filter_magnitude, _cam_config.spatial_magnitude)
+            self._spatial_filter.set_option(rs.option.filter_smooth_alpha, _cam_config.spatial_smooth_alpha)
+            self._spatial_filter.set_option(rs.option.filter_smooth_delta, _cam_config.spatial_smooth_delta)
         
         self._temporal_filter = rs.temporal_filter()
         self._hole_filling_filter = rs.hole_filling_filter()
