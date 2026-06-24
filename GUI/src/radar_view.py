@@ -5,7 +5,7 @@ import math
 from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QBrush, QColor, QConicalGradient, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
-from styles import (
+from GUI.inc.styles import (
     RADAR_BG,
     RADAR_BLIP_CENTER,
     RADAR_BLIP_SAFE,
@@ -14,7 +14,7 @@ from styles import (
     RADAR_LABEL_MUTED,
     RADAR_SWEEP,
 )
-from ui_config import RADAR_HEIGHT_PX, RADAR_MAX_DEPTH, RADAR_WIDTH_PX
+from GUI.inc.ui_config import RADAR_HEIGHT_PX, RADAR_MAX_DEPTH, RADAR_WIDTH_PX
 
 
 class RadarView(QWidget):

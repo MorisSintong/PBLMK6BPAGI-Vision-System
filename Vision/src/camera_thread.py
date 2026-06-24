@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import queue
 import time
 from typing import TYPE_CHECKING, Optional
 
@@ -9,7 +10,7 @@ import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QImage
 
-from logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -136,10 +137,9 @@ class CameraThread(QThread):
 
         return True
 
-    def _run_realsense_loop(self):
-        read_failures = 0  # Fitur Moris yang dikembalikan
-        while self._running:
-            start_time = time.time()
+    def _realsense_acquisition_worker(self):
+        read_failures = 0
+        while self._acq_running:
             try:
                 frames = self._pipeline.wait_for_frames(timeout_ms=1000)
             except RuntimeError:
@@ -149,7 +149,7 @@ class CameraThread(QThread):
                     logger.error(error_msg)
                     self.error.emit(error_msg)
                     break
-                self.msleep(30)
+                time.sleep(0.03)
                 continue
 
             aligned = self._align.process(frames)
@@ -162,7 +162,7 @@ class CameraThread(QThread):
                     logger.error(error_msg)
                     self.error.emit(error_msg)
                     break
-                self.msleep(30)
+                time.sleep(0.03)
                 continue
 
             # --- APLIKASI FILTER KAMERA DEPTH ---
@@ -181,14 +181,37 @@ class CameraThread(QThread):
             if self._decimation_filter is not None and depth_raw.shape != color_bgr.shape[:2]:
                 depth_raw = cv2.resize(depth_raw, (color_bgr.shape[1], color_bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
 
-            # Fitur Moris yang dikembalikan: Pipeline Integration
+            if self._frame_queue.full():
+                try:
+                    self._frame_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            self._frame_queue.put((color_bgr, depth_raw))
+
+    def _run_realsense_loop(self):
+        self._frame_queue = queue.Queue(maxsize=2)
+        self._acq_running = True
+        self._acq_thread = threading.Thread(target=self._realsense_acquisition_worker, daemon=True)
+        self._acq_thread.start()
+
+        while self._running:
+            try:
+                frames_data = self._frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            start_time = time.time()
+
+            color_bgr, depth_raw = frames_data
+
             result = None
             zone = "center"
             if self._processor is not None:
                 result = self._processor.process(color_bgr, depth_raw, self._depth_scale)
-                rgb_pixmap = self._bgr_to_qimage(result.rgb_frame)
+                rgb_pixmap = self._bgr_to_qimage(result.rgb_frame, is_depth=False)
                 depth_pixmap = self._bgr_to_qimage(
-                    result.depth_colormap if result.depth_colormap is not None else np.zeros_like(color_bgr)
+                    result.depth_colormap if result.depth_colormap is not None else np.zeros_like(color_bgr),
+                    is_depth=True
                 )
 
                 if result.fused_output:
@@ -205,7 +228,7 @@ class CameraThread(QThread):
                     label = "Clear"
             else:
                 # Mode fallback jika processor tidak ada
-                rgb_pixmap = self._bgr_to_qimage(color_bgr)
+                rgb_pixmap = self._bgr_to_qimage(color_bgr, is_depth=False)
                 depth_pixmap = QImage() # Use empty QImage instead of None for type safety
                 label = "Clear"
                 dist = None
@@ -223,10 +246,12 @@ class CameraThread(QThread):
             sleep_ms = max(1, self._frame_delay_ms - elapsed_ms)
             self.msleep(sleep_ms)
 
-    def _run_webcam_loop(self):
+        self._acq_running = False
+        self._acq_thread.join(timeout=1.0)
+
+    def _webcam_acquisition_worker(self):
         read_failures = 0
-        while self._running:
-            start_time = time.time()
+        while self._acq_running:
             ok, frame_bgr = self._capture.read()
             if not ok:
                 read_failures += 1
@@ -235,16 +260,36 @@ class CameraThread(QThread):
                     logger.error(error_msg)
                     self.error.emit(error_msg)
                     break
-                self.msleep(30)
+                time.sleep(0.03)
                 continue
 
             read_failures = 0
+            if self._frame_queue.full():
+                try:
+                    self._frame_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            self._frame_queue.put(frame_bgr)
+
+    def _run_webcam_loop(self):
+        self._frame_queue = queue.Queue(maxsize=2)
+        self._acq_running = True
+        self._acq_thread = threading.Thread(target=self._webcam_acquisition_worker, daemon=True)
+        self._acq_thread.start()
+
+        while self._running:
+            try:
+                frame_bgr = self._frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            start_time = time.time()
 
             if self._processor is not None:
                 result = self._processor.process(frame_bgr, None)
-                rgb_pixmap = self._bgr_to_qimage(result.rgb_frame)
+                rgb_pixmap = self._bgr_to_qimage(result.rgb_frame, is_depth=False)
             else:
-                rgb_pixmap = self._bgr_to_qimage(frame_bgr)
+                rgb_pixmap = self._bgr_to_qimage(frame_bgr, is_depth=False)
 
             self.frame_pair_ready.emit(rgb_pixmap, QImage()) # Empty QImage instead of None
             self.distance_info_ready.emit("Depth Tidak Tersedia", None, "center")
@@ -254,6 +299,9 @@ class CameraThread(QThread):
             elapsed_ms = int((time.time() - start_time) * 1000)
             sleep_ms = max(1, self._frame_delay_ms - elapsed_ms)
             self.msleep(sleep_ms)
+
+        self._acq_running = False
+        self._acq_thread.join(timeout=1.0)
 
     def _open_camera(self):
         if os.name == "nt":
@@ -275,13 +323,13 @@ class CameraThread(QThread):
             capture.release()
         return None
 
-    def _bgr_to_qimage(self, frame_bgr):
+    def _bgr_to_qimage(self, frame_bgr, is_depth=False):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         height, width, channels = frame_rgb.shape
         bytes_per_line = channels * width
         return QImage(
             frame_rgb.tobytes(), width, height, bytes_per_line, QImage.Format.Format_RGB888
-        ).copy()
+        )
 
     def _release_resources(self):
         if self._pipeline is not None:

@@ -92,3 +92,22 @@ Vision/models/
 # Logs
 # =========================
 logs/
+
+# =========================
+# Testing & Coverage
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# =========================
+# AI Assistant / Agent Workspace
+# =========================
+.agents/
+

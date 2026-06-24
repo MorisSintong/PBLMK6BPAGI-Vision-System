@@ -10,17 +10,12 @@ import sys
 import numpy as np
 import pytest
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-for sub in ["Vision/src", "Vision/inc", "GUI/inc"]:
-    p = os.path.join(BASE, sub)
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
+# No sys.path insertion needed
 from PyQt6.QtWidgets import QApplication
 
 app = QApplication.instance() or QApplication(sys.argv)
 
-from camera_thread import CameraThread
+from Vision.src.camera_thread import CameraThread
 
 
 def test_instantiation():

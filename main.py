@@ -11,25 +11,10 @@ Responsibilities:
 import os
 import sys
 
-# ── sys.path registration ─────────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-SEARCH_PATHS = [
-    os.path.join(BASE_DIR, "GUI",    "src"),
-    os.path.join(BASE_DIR, "GUI",    "inc"),
-    os.path.join(BASE_DIR, "Vision", "src"),
-    os.path.join(BASE_DIR, "Vision", "inc"),
-]
-
-for path in SEARCH_PATHS:
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-# ── Qt bootstrap ──────────────────────────────────────────────────────────────
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore    import Qt, QSize
-from main_window     import MainWindow
-from ui_config       import APP_NAME, WINDOW_MIN_W, WINDOW_MIN_H
+from GUI.src.main_window import MainWindow
+from GUI.inc.ui_config import APP_NAME, WINDOW_MIN_W, WINDOW_MIN_H
 
 # ── entry point ───────────────────────────────────────────────────────────────
 def main() -> int:
@@ -44,7 +29,7 @@ def main() -> int:
     app.setOrganizationName("depth-obstacle-detector")
 
     try:
-        from styles import GLOBAL_STYLESHEET  # type: ignore
+        from GUI.inc.styles import GLOBAL_STYLESHEET  # type: ignore
 
         app.setStyleSheet(GLOBAL_STYLESHEET)
     except ImportError:

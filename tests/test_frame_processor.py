@@ -9,20 +9,17 @@ import time
 
 import numpy as np
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-for sub in ["Vision/src", "Vision/inc", "GUI/inc"]:
-    p = os.path.join(BASE, sub)
-    if p not in sys.path:
-        sys.path.insert(0, p)
+# No sys.path insertion needed
 
-from detection_config import DetectionConfig
-from frame_processor import (
+from Vision.inc.detection_config import DetectionConfig
+from Vision.src.frame_processor import (
     DepthProcessingStage,
     FrameData,
     FrameProcessor,
     FusionStage,
     PipelineStage,
     YOLODetectionStage,
+    VisualAnnotationStage
 )
 
 

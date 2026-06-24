@@ -1,4 +1,4 @@
-from logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -9,6 +9,7 @@ class DetectionConfig:
         self.min_distance = 0.3   # jarak minimum (terlalu dekat, diabaikan)
         self.max_distance = 5.0   # jarak maksimum yang dipantau
         self.danger_distance = 1.5  # jarak bahaya = obstacle terdeteksi
+        self.warning_distance = 3.0  # jarak warning = obstacle mendekati
 
     def set_danger_distance(self, distance: float):
         """Ubah jarak bahaya, dipanggil dari GUI"""

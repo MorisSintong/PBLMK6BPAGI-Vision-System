@@ -24,15 +24,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-from detection_config import DetectionConfig
-from obstacle_detector import ObstacleDetector
+from Vision.inc.detection_config import DetectionConfig
+from Vision.src.obstacle_detector import ObstacleDetector
 
 try:
     from yolowrapper import YOLOWrapper
 except ImportError:
     YOLOWrapper = None  # type: ignore[misc,assignment]
 
-from logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 _logger = get_logger(__name__)
 
@@ -240,17 +240,13 @@ class DepthProcessingStage(PipelineStage):
 
         data.depth_colormap = depth_colormap
 
-        # 2. Obstacle detection
-        annotated, obstacles_list = self._detector.detect(
+        _, obstacles_list = self._detector.detect(
             data.rgb_frame,
             data.depth_frame,
             data.depth_scale,
             self.danger_threshold,
             self.warning_threshold,
         )
-
-        if annotated is not None:
-            data.rgb_frame = annotated
 
         # Menghapus label "TODO(R3)" dan mengisi data asli dari detektor!
         data.obstacles = obstacles_list
@@ -291,8 +287,7 @@ class YOLODetectionStage(PipelineStage):
                     input_size=input_size,
                 )
             except Exception as e:
-                from logging_config import get_logger
-                get_logger(__name__).warning(f"YOLO model failed to load: {e}")
+                _logger.warning(f"YOLO model failed to load: {e}")
 
     def process(self, data: FrameData) -> FrameData:
         if self._wrapper is None:
@@ -439,7 +434,126 @@ class FusionStage(PipelineStage):
             })
 
         data.fused_output = fused_results
+
         return data
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VisualAnnotationStage — Role 5 (Rendering)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class VisualAnnotationStage(PipelineStage):
+    """Stage terakhir untuk menggambar bounding box dan HUD status ke rgb_frame.
+    
+    Kontrak:
+    - Membaca FrameData.fused_output (atau obstacles jika fusion kosong).
+    - Memodifikasi FrameData.rgb_frame in-place.
+    """
+
+    def __init__(self, config: DetectionConfig = None) -> None:
+        super().__init__("VisualAnnotationStage")
+        self._config = config or DetectionConfig()
+
+    def process(self, data: FrameData) -> FrameData:
+        if data.rgb_frame is None:
+            return data
+
+        # Pilih sumber data (Fusion prioritas utama, fallback ke obstacles raw, fallback terakhir YOLO)
+        items_to_draw = data.fused_output if data.fused_output else data.obstacles
+        source_is_xyxy = bool(data.fused_output)
+        
+        # Mode fallback YOLO only jika depth tidak aktif
+        yolo_fallback_mode = False
+        if not items_to_draw and data.detections:
+            # Konversi YOLO detections ke dict format
+            items_to_draw = []
+            yolo_fallback_mode = True
+            source_is_xyxy = True
+            for det in data.detections:
+                items_to_draw.append({
+                    "bbox": det.bbox, # xyxy
+                    "object_class": det.class_name,
+                    "priority": 3.0,
+                    "distance_m": 99.0, # Unknown
+                    "zone": "center"
+                })
+
+        global_status = "SAFE"
+        
+        # 1. Gambar Bounding Boxes
+        for item in items_to_draw:
+            bbox = item.get("bbox")
+            if not bbox or len(bbox) != 4:
+                continue
+            
+            # Normalize to xywh for drawing
+            if source_is_xyxy:
+                x1, y1, x2, y2 = bbox
+                x, y, w, h = x1, y1, x2 - x1, y2 - y1
+            else:
+                x, y, w, h = bbox
+
+            distance = item.get("distance_m", 99.0)
+            priority = item.get("priority", 3.0)
+            zone_str = item.get("zone", "center")
+            
+            # Tentukan warna dan status global
+            if priority <= 1.0 or distance < self._config.danger_distance:
+                color = (60, 60, 255)  # Soft Red
+                global_status = "DANGER"
+            elif priority <= 2.0 or distance < self._config.warning_distance:
+                color = (0, 165, 255)  # Amber
+                if global_status != "DANGER":
+                    global_status = "WARN"
+            else:
+                color = (50, 205, 50)  # Lime Green
+
+            label = f"[{zone_str.upper()[0]}] {distance:.2f}m"
+            if "object_class" in item:
+                label = f"{item['object_class']} {label}"
+
+            # Gambar HUD Corner Brackets
+            bracket_len = max(5, min(w, h, 40) // 4)
+            thick = 3
+            cv2.line(data.rgb_frame, (x, y), (x + bracket_len, y), color, thick)
+            cv2.line(data.rgb_frame, (x, y), (x, y + bracket_len), color, thick)
+            cv2.line(data.rgb_frame, (x + w, y), (x + w - bracket_len, y), color, thick)
+            cv2.line(data.rgb_frame, (x + w, y), (x + w, y + bracket_len), color, thick)
+            cv2.line(data.rgb_frame, (x, y + h), (x + bracket_len, y + h), color, thick)
+            cv2.line(data.rgb_frame, (x, y + h), (x, y + h - bracket_len), color, thick)
+            cv2.line(data.rgb_frame, (x + w, y + h), (x + w - bracket_len, y + h), color, thick)
+            cv2.line(data.rgb_frame, (x + w, y + h), (x + w, y + h - bracket_len), color, thick)
+
+            # Teks Label
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            scale = 0.6
+            thickness = 2
+            (text_w, text_h), baseline = cv2.getTextSize(label, font, scale, thickness)
+            text_y = max(y - 8, text_h + 4)
+            
+            cv2.rectangle(data.rgb_frame, (x, text_y - text_h - 4), (x + text_w, text_y + 4), (30, 30, 30), -1)
+            cv2.putText(data.rgb_frame, label, (x, text_y), font, scale, color, thickness, cv2.LINE_AA)
+
+        # 2. Gambar Status Global HUD
+        if global_status == "DANGER":
+            status_color = (60, 60, 255)
+        elif global_status == "WARN":
+            status_color = (0, 165, 255)
+        else:
+            status_color = (50, 205, 50)
+
+        status_text = f"SYS: {global_status}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.8
+        thickness = 2
+        (text_w, text_h), baseline = cv2.getTextSize(status_text, font, scale, thickness)
+        sx, sy = 25, 45
+        
+        cv2.rectangle(data.rgb_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), (30, 30, 30), -1)
+        cv2.rectangle(data.rgb_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), status_color, 1)
+        cv2.putText(data.rgb_frame, status_text, (sx, sy), font, scale, status_color, thickness, cv2.LINE_AA)
+
+        return data
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

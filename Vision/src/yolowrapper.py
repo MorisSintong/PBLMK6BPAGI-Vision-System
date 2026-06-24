@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", message=".*weights_only.*", category=FutureWar
 
 from ultralytics import YOLO
 
-from logging_config import get_logger
+from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)
 

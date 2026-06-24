@@ -68,9 +68,9 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Deliverable | Role | Status |
 |---|---|---|
 | Sensor fusion module (`FusionStage`) | R4 (Rasyid) | ✅ Implemented — overlap matching, priority matrix, config thresholds, 8 tests |
+| Visual annotation overlay (`VisualAnnotationStage`) | R5/R1 | ✅ Implemented — HUD corner brackets, labels, global status bar. Renders in pipeline onto `rgb_frame` |
 | Dataset acquisition & labeling | R5 (Hamid) | ❌ Not started — need ≥300 frames |
 | Test harness & benchmark | R5 | ❌ Not started |
-| DepthView annotation overlay | R6 (Adel) | ❌ Not started — bbox + label + distance |
 | End-to-end integration test | R1 | ❌ Not started |
 | Fine-tune YOLOv8 with dataset | R2 (Husein) | ❌ Waiting on R5 |
 | mAP accuracy benchmark | R2 | ❌ Not started — need ≥70% mAP@0.5 |
@@ -82,12 +82,12 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Role | Completed | Remaining | % Complete |
 |------|-----------|-----------|------------|
-| R1 (Moris) — ML Pipeline | 19 items | 1 (integration test) | 95% |
+| R1 (Moris) — ML Pipeline | 20 items | 1 (integration test) | 95% |
 | R2 (Husein) — YOLOv8 | 3 items | 2 (fine-tune, mAP) | 60% |
 | R3 (Long) — Depth | 4 items | 1 (outdoor test) | 80% |
 | R4 (Rasyid) — Fusion | 3 items | 0 (FusionStage implemented, priority done) | 100% |
 | R5 (Hamid) — Dataset | 1 item | 3 (dataset, harness, regression) | 25% |
-| R6 (Adel) — GUI | 8 items | 1 (DepthView overlay) | 89% |
+| R6 (Adel) — GUI | 8 items | 0 | 100% |
 
 ---
 
@@ -100,11 +100,12 @@ main.py → MainWindow
               ├── AlertPanel (object info + zone + action)
               ├── RadarView (180° semicircle)
               └── CameraThread
-                    ├── RealSense capture + depth filters
-                    └── FrameProcessor
+                    ├── RealSense capture + depth filters (Producer thread)
+                    └── FrameProcessor (Consumer loop)
                           ├── DepthProcessingStage (colormap + multi-zone)
                           ├── YOLODetectionStage (YOLOv8 via YOLOWrapper)
-                          └── FusionStage (YOLO + Depth matching, priority)
+                          ├── FusionStage (YOLO + Depth matching, priority)
+                          └── VisualAnnotationStage (HUD rendering)
 ```
 
 ## Data Flow
@@ -114,11 +115,13 @@ CameraThread (capture + filter)
     │
     └──→ FrameProcessor.process(rgb, depth)
             │
-            ├── DepthProcessingStage ──→ FrameData.obstacles ──┐
-            ├── YOLODetectionStage ───→ FrameData.detections ──┤
-            └── FusionStage ──────────→ FrameData.fused_output  │
-                                           │                    │
-                                           └──→ GUI ────────────┘
+            ├── DepthProcessingStage ────→ FrameData.obstacles ──┐
+            ├── YOLODetectionStage ──────→ FrameData.detections ──┤
+            ├── FusionStage ────────────→ FrameData.fused_output  │
+            └── VisualAnnotationStage ──→ FrameData.rgb_frame ────┤
+                                            (annotated in-place)  │
+                                                                   │
+                                           └──→ GUI ──────────────┘
                                                 AlertPanel + RadarView + DepthView
 ```
 
@@ -214,7 +217,7 @@ CameraThread (capture + filter)
 | Gap | Detail |
 |---|---|
 | FusionStage belum terimplementasi | ~~`FusionStage` masih placeholder, menunggu R4~~ ✅ IMPLEMENTED — overlap matching, priority, config thresholds |
-| DepthView tanpa anotasi | Bounding box + label + jarak belum ditampilkan di DepthView |
+| DepthView tanpa anotasi | ~~Bounding box + label + jarak belum ditampilkan di DepthView~~ ✅ IMPLEMENTED — `VisualAnnotationStage` renders HUD overlays (corner brackets, labels, status bar) onto `rgb_frame` in the pipeline. DepthView displays the annotated result. |
 | Belum ada dataset terlabel | R5 belum mengumpulkan ≥300 frame berlabel |
 | Belum ada integration test | Hanya isolation test, belum ada test CameraThread + FrameProcessor end-to-end |
 | Belum ada akurasi benchmark | Tidak ada pengukuran mAP@0.5 |
