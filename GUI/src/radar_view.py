@@ -23,7 +23,7 @@ class RadarView(QWidget):
         self.setFixedSize(RADAR_WIDTH_PX, RADAR_HEIGHT_PX)
 
         self._obstacles = []
-        self._sweep = 0.0
+        self._sweep = 45.0  # Mulai dari ujung kanan FOV (45 derajat)
         self._sweep_dir = 1
 
         self._timer = QTimer(self)
@@ -46,11 +46,11 @@ class RadarView(QWidget):
     # ------------------------------------------------------------------ #
     def _tick(self):
         self._sweep += 3 * self._sweep_dir
-        if self._sweep >= 180:
-            self._sweep = 180
+        if self._sweep >= 135:
+            self._sweep = 135
             self._sweep_dir = -1
-        elif self._sweep <= 0:
-            self._sweep = 0
+        elif self._sweep <= 45:
+            self._sweep = 45
             self._sweep_dir = 1
         self.update()
 
@@ -76,99 +76,115 @@ class RadarView(QWidget):
         p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         p.drawText(QRectF(0, 6, w, 16), Qt.AlignmentFlag.AlignCenter, "RADAR VIEW")
 
-        # ── 3. Setengah Cincin Jarak ──────────────────────────────────
+        # ── 3. Cincin Jarak (90 derajat FOV) ──────────────────────────
         rings = 4
         for i in range(1, rings + 1):
             ri = r * i / rings
             p.setPen(QPen(QColor(RADAR_BORDER), 0.8))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawArc(QRectF(cx - ri, cy - ri, ri * 2, ri * 2), 0 * 16, 180 * 16)
+            # PyQt drawArc: startAngle and spanAngle in 1/16ths of a degree.
+            # 45 degrees start, 90 degrees span (draws from 45 to 135)
+            p.drawArc(QRectF(cx - ri, cy - ri, ri * 2, ri * 2), 45 * 16, 90 * 16)
 
-            # Label jarak
+            # Label jarak (ditaruh di sisi kiri wedge)
             dist_label = f"{int(RADAR_MAX_DEPTH * i / rings)}m"
             p.setPen(QPen(QColor(RADAR_LABEL_MUTED)))
             p.setFont(QFont("Segoe UI", 7))
+            
+            lx = cx + ri * math.cos(math.radians(135))
+            ly = cy - ri * math.sin(math.radians(135))
             p.drawText(
-                QRectF(cx + 3, cy - ri - 10, 20, 12),
-                Qt.AlignmentFlag.AlignLeft,
+                QRectF(lx - 25, ly - 5, 20, 12),
+                Qt.AlignmentFlag.AlignRight,
                 dist_label,
             )
 
-        # ── 4. Garis Dasar (Horizontal) ───────────────────────────────
-        p.setPen(QPen(QColor(RADAR_BORDER), 0.8))
-        p.drawLine(QPointF(cx - r, cy), QPointF(cx + r, cy))
-
-        # ── 5. Garis Sudut ────────────────────────────────────────────
-        for deg in [45, 90, 135]:
-            p.setPen(QPen(QColor(RADAR_BORDER), 0.8))
+        # ── 4. Garis Batas FOV (Kiri & Kanan) ─────────────────────────
+        p.setPen(QPen(QColor(RADAR_BORDER), 1.5)) # Garis luar lebih tebal
+        for deg in [45, 135]:
             p.drawLine(
                 QPointF(cx, cy),
                 QPointF(
-                    cx + r * math.cos(math.radians(180 - deg)),
-                    cy - r * math.sin(math.radians(180 - deg)),
-                ),
-            )
-
-        # ── 6. Garis Zona (60 & 120 derajat) ─────────────────────────
-        for deg in [60, 120]:
-            p.setPen(QPen(QColor(RADAR_BORDER), 0.8, Qt.PenStyle.DashLine))
-            p.drawLine(
-                QPointF(cx, cy),
-                QPointF(
-                    cx - r * math.cos(math.radians(deg)),
+                    cx + r * math.cos(math.radians(deg)),
                     cy - r * math.sin(math.radians(deg)),
                 ),
             )
 
-        # ── 7. Label Zona ─────────────────────────────────────────────
+        # ── 5. Garis Tengah & Sub-zona ────────────────────────────────
+        for deg in [75, 90, 105]:
+            pen = QPen(QColor(RADAR_BORDER), 0.8)
+            if deg != 90:
+                pen.setStyle(Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.drawLine(
+                QPointF(cx, cy),
+                QPointF(
+                    cx + r * math.cos(math.radians(deg)),
+                    cy - r * math.sin(math.radians(deg)),
+                ),
+            )
+
+        # ── 6. Label Zona ─────────────────────────────────────────────
         p.setFont(QFont("Segoe UI", 8))
         p.setPen(QPen(QColor(RADAR_LABEL_MUTED)))
 
-        # CENTER — di atas tengah
+        # CENTER
         p.drawText(
             QRectF(cx - 25, cy - r - 25, 50, 14), Qt.AlignmentFlag.AlignCenter, "CENTER"
         )
-
-        # LEFT — di luar kiri
+        # LEFT
         p.drawText(
-            QRectF(cx - r - 35, cy - 8, 35, 14), Qt.AlignmentFlag.AlignCenter, "LEFT"
+            QRectF(cx - r - 15, cy - r + 20, 35, 14), Qt.AlignmentFlag.AlignCenter, "LEFT"
+        )
+        # RIGHT
+        p.drawText(
+            QRectF(cx + r - 20, cy - r + 20, 35, 14), Qt.AlignmentFlag.AlignCenter, "RIGHT"
         )
 
-        # RIGHT — di luar kanan
-        p.drawText(
-            QRectF(cx + r + 2, cy - 8, 35, 14), Qt.AlignmentFlag.AlignCenter, "RIGHT"
-        )
-
-        # ── 8. Sweep Line ─────────────────────────────────────────────
-        sx = cx + r * math.cos(math.radians(180 - self._sweep))
-        sy = cy - r * math.sin(math.radians(180 - self._sweep))
+        # ── 7. Sweep Line ─────────────────────────────────────────────
+        sx = cx + r * math.cos(math.radians(self._sweep))
+        sy = cy - r * math.sin(math.radians(self._sweep))
         p.setPen(QPen(QColor(RADAR_SWEEP), 1.5))
         p.drawLine(QPointF(cx, cy), QPointF(sx, sy))
 
-        # ── 9. Cincin Luar (setengah) ─────────────────────────────────
+        # ── 8. Cincin Luar ────────────────────────────────────────────
         p.setPen(QPen(QColor(RADAR_SWEEP), 1.2))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawArc(QRectF(cx - r, cy - r, r * 2, r * 2), 0 * 16, 180 * 16)
+        p.drawArc(QRectF(cx - r, cy - r, r * 2, r * 2), 45 * 16, 90 * 16)
 
         # ── 10. Titik Pusat ───────────────────────────────────────────
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(QColor(RADAR_SWEEP)))
         p.drawEllipse(QPointF(cx, cy), 3, 3)
 
-        # ── 11. Obstacle Blips ────────────────────────────────────────
-        ZONE_TO_ANGLE = {"left": 45, "center": 90, "right": 135}
+        # ── 10. Obstacle Blips ────────────────────────────────────────
         for obs in self._obstacles:
-            zone = obs.get("zone", "center")
-            angle_deg = obs.get("angle_deg") or ZONE_TO_ANGLE.get(zone.upper(), 90)
             distance_m = obs.get("distance_m", 0)
+            if distance_m <= 0:
+                continue
+
+            # Hitung sudut berdasarkan koordinat horizontal dari Bounding Box
+            if "bbox" in obs:
+                x1, y1, x2, y2 = obs["bbox"]
+                bbox_cx = (x1 + x2) / 2
+                # Asumsi resolusi kamera 640px. Pemetaan FOV 90 derajat:
+                # Kiri layar (0px) -> 135°, Kanan layar (640px) -> 45°
+                angle_deg = 135 - (bbox_cx / 640.0) * 90
+            else:
+                zone = obs.get("zone", "center").upper()
+                angle_deg = {"LEFT": 120, "CENTER": 90, "RIGHT": 60}.get(zone, 90)
+
+            # Batasi agar blip tidak keluar dari wedge radar
+            angle_deg = max(45, min(135, angle_deg))
 
             dist_frac = min(distance_m / RADAR_MAX_DEPTH, 1.0)
-            bx = cx + dist_frac * r * math.cos(math.radians(180 - angle_deg))
-            by = cy - dist_frac * r * math.sin(math.radians(180 - angle_deg))
+            bx = cx + dist_frac * r * math.cos(math.radians(angle_deg))
+            by = cy - dist_frac * r * math.sin(math.radians(angle_deg))
 
-            if zone == "CENTER":
+            zone_str = obs.get("zone", "center").upper()
+            if zone_str == "CENTER":
                 color = QColor(RADAR_BLIP_CENTER)
-            elif zone in ("LEFT", "RIGHT"):
+            elif zone_str in ("LEFT", "RIGHT"):
                 color = QColor(RADAR_BLIP_SIDE)
             else:
                 color = QColor(RADAR_BLIP_SAFE)
