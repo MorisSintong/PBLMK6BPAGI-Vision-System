@@ -28,7 +28,7 @@ from Vision.inc.detection_config import DetectionConfig
 from Vision.src.obstacle_detector import ObstacleDetector
 
 try:
-    from yolowrapper import YOLOWrapper
+    from Vision.src.yolowrapper import YOLOWrapper
 except ImportError:
     YOLOWrapper = None  # type: ignore[misc,assignment]
 
