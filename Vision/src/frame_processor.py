@@ -363,11 +363,11 @@ class FusionStage(PipelineStage):
         yolo_box: List[int],
         depth_area_px: Optional[int] = None,
     ) -> float:
-        """Hitung porsi area dari depth_box yang tertutupi oleh yolo_box.
+        """Hitung overlap antara depth_box dan yolo_box.
 
-        Menggunakan depth_area_px (cv2.contourArea) sebagai denominator
-        jika tersedia, karena boundingRect area bisa lebih besar dari
-        area kontur aktual untuk bentuk tidak beraturan (AABB inflation).
+        Menggunakan area terkecil (min) sebagai denominator agar:
+        - YOLO box kecil di dalam depth blob besar → overlap tinggi
+        - Depth blob kecil di dalam YOLO box besar → overlap tinggi
 
         Args:
             depth_box:     [x1, y1, x2, y2] depth obstacle bbox
@@ -383,16 +383,21 @@ class FusionStage(PipelineStage):
         if interArea == 0:
             return 0.0
 
-        # Gunakan contour area jika tersedia, fallback ke AABB area
+        # Area depth box (gunakan contour area jika tersedia)
         if depth_area_px and depth_area_px > 0:
             depthBoxArea = depth_area_px
         else:
             depthBoxArea = (depth_box[2] - depth_box[0]) * (depth_box[3] - depth_box[1])
 
-        if depthBoxArea == 0:
+        # Area YOLO box
+        yoloBoxArea = (yolo_box[2] - yolo_box[0]) * (yolo_box[3] - yolo_box[1])
+
+        # Gunakan area terkecil sebagai denominator
+        minArea = min(depthBoxArea, yoloBoxArea)
+        if minArea == 0:
             return 0.0
 
-        return interArea / float(depthBoxArea)
+        return interArea / float(minArea)
 
     def process(self, data: FrameData) -> FrameData:
         fused_results = []

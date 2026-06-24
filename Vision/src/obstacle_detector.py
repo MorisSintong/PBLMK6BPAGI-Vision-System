@@ -17,15 +17,20 @@ class ObstacleDetector:
         max_distance_m=5.0,
         min_distance_m=0.3,
         min_area=800,
+        max_area_ratio=0.40,
     ):
         """
-        max_distance_m : jarak maksimal obstacle yang dianggap penting
-        min_distance_m : jarak minimal valid agar noise kamera diabaikan
-        min_area       : luas minimum objek agar tidak mendeteksi noise kecil
+        max_distance_m  : jarak maksimal obstacle yang dianggap penting
+        min_distance_m  : jarak minimal valid agar noise kamera diabaikan
+        min_area        : luas minimum objek agar tidak mendeteksi noise kecil
+        max_area_ratio  : rasio maks area kontur terhadap frame (0.0-1.0).
+                          Kontur lebih besar dari ini dianggap "seluruh scene",
+                          bukan obstacle diskret, dan akan diskip.
         """
         self.max_distance_m = max_distance_m
         self.min_distance_m = min_distance_m
         self.min_area = min_area
+        self.max_area_ratio = max_area_ratio
 
         # Thread safety for last_detections
         self._detections_lock = threading.Lock()
@@ -100,11 +105,15 @@ class ObstacleDetector:
 
         obstacles_list = []
         global_status = "SAFE"
+        frame_area = height * width
+        max_area = frame_area * self.max_area_ratio
 
         for contour in contours:
             area = cv2.contourArea(contour)
             if area < self.min_area:
                 continue
+            if area > max_area:
+                continue  # Skip scene-wide contours (bukan obstacle diskret)
 
             x, y, w, h = cv2.boundingRect(contour)
 
