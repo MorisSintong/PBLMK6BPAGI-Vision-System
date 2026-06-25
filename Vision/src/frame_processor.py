@@ -209,13 +209,17 @@ class DepthProcessingStage(PipelineStage):
         self._build_depth_lut()
 
     def _build_depth_lut(self) -> None:
-        """Pre-compute 256-entry BGR LUT: index = depth_m * 255 / max_distance."""
+        """Pre-compute 256-entry BGR LUT: index = depth_m * 255 / max_distance.
+        
+        Index 255 is reserved as 'out of range' (black) because np.clip maps
+        any depth > max_m to 255.
+        """
         lut = np.zeros((256, 3), dtype=np.uint8)
         max_m = self._depth_max_m if self._depth_max_m > 0 else 5.0
         for i in range(256):
             depth_m = (i / 255.0) * max_m
-            if depth_m < self._depth_min_m or depth_m > self._depth_max_m:
-                lut[i] = (0, 0, 0)        # Black = invalid
+            if depth_m < self._depth_min_m or depth_m >= self._depth_max_m:
+                lut[i] = (0, 0, 0)        # Black = invalid (>= catches clipped values at index 255)
             elif depth_m < self.danger_threshold:
                 lut[i] = (0, 0, 255)       # Red = danger
             elif depth_m < self.warning_threshold:

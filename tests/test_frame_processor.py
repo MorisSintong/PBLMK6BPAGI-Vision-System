@@ -275,6 +275,43 @@ def test_depth_colormap_raw_not_set_without_raw():
     assert result.depth_colormap_raw is None
 
 
+def test_depth_colormap_out_of_range_is_black():
+    """Depth values beyond max_distance should map to black (not green)."""
+    config = DetectionConfig()
+    stage = DepthProcessingStage(config, depth_max_m=5.0)
+    stage._build_depth_lut()
+    h, w = 10, 10
+    # depth_m = 10.0 (beyond max_m=5.0) → should be black
+    depth_m = np.full((h, w), 10.0, dtype=np.float32)
+    depth_raw = (depth_m / 0.001).astype(np.uint16)
+    data = FrameData(
+        rgb_frame=np.zeros((h, w, 3), dtype=np.uint8),
+        depth_frame=depth_raw,
+        depth_scale=0.001,
+    )
+    result = stage.process(data)
+    cm = result.depth_colormap
+    # All pixels should be black (0,0,0) since depth > max_m
+    assert cm[0, 0, 0] == 0 and cm[0, 0, 1] == 0 and cm[0, 0, 2] == 0
+
+
+def test_depth_colormap_zero_depth_is_black():
+    """Depth = 0 (invalid/no data) should map to black."""
+    config = DetectionConfig()
+    stage = DepthProcessingStage(config, depth_min_m=0.3)
+    stage._build_depth_lut()
+    h, w = 10, 10
+    depth_raw = np.zeros((h, w), dtype=np.uint16)  # depth = 0
+    data = FrameData(
+        rgb_frame=np.zeros((h, w, 3), dtype=np.uint8),
+        depth_frame=depth_raw,
+        depth_scale=0.001,
+    )
+    result = stage.process(data)
+    cm = result.depth_colormap
+    assert cm[0, 0, 0] == 0 and cm[0, 0, 1] == 0 and cm[0, 0, 2] == 0
+
+
 def test_depth_lut_rebuild_on_threshold_change():
     """LUT should rebuild when danger/warning thresholds change."""
     config = DetectionConfig()
@@ -964,6 +1001,8 @@ if __name__ == "__main__":
         ("depth colormap colors", test_depth_colormap_colors),
         ("depth colormap raw generated", test_depth_colormap_raw_generated),
         ("depth colormap raw not set without raw", test_depth_colormap_raw_not_set_without_raw),
+        ("depth colormap out of range is black", test_depth_colormap_out_of_range_is_black),
+        ("depth colormap zero depth is black", test_depth_colormap_zero_depth_is_black),
         ("depth lut rebuild on threshold change", test_depth_lut_rebuild_on_threshold_change),
         ("depth stage populates obstacles", test_depth_stage_populates_obstacles),
         # FusionStage
