@@ -15,6 +15,7 @@ from Vision.src.frame_processor import (
     FrameData,
     FrameProcessor,
     FusionStage,
+    NavigationStage,
     PipelineStage,
     YOLODetectionStage,
     VisualAnnotationStage
@@ -975,6 +976,196 @@ def test_pipeline_stage_error_doesnt_crash():
     assert "Crash" in result.errors[0]
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# NavigationStage Tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _make_nav_depth_frame(h=480, w=640, obstacle_regions=None, clear_m=5.0, depth_scale=0.001):
+    """Create a depth frame with optional obstacle regions.
+    obstacle_regions: list of (x_start_frac, x_end_frac, distance_m)
+    """
+    depth_m = np.full((h, w), clear_m, dtype=np.float32)
+    if obstacle_regions:
+        for x_start_frac, x_end_frac, dist_m in obstacle_regions:
+            depth_m[:, int(w * x_start_frac):int(w * x_end_frac)] = dist_m
+    return (depth_m / depth_scale).astype(np.uint16)
+
+
+def test_nav_clear_path():
+    """No obstacles → status CLEAR, steering 0, speed 1.0."""
+    nav = NavigationStage()
+    depth_raw = _make_nav_depth_frame(clear_m=5.0)
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert result.navigation["status"] == "CLEAR"
+    assert result.navigation["steering_angle_deg"] == 0.0
+    assert result.navigation["speed"] == 1.0
+
+
+def test_nav_blocked_all():
+    """All sectors blocked → status BLOCKED, speed 0.0."""
+    nav = NavigationStage()
+    # All sectors have obstacle at 0.3m (below min_gap_m of 1.1m)
+    depth_raw = _make_nav_depth_frame(clear_m=0.3)
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert result.navigation["status"] == "BLOCKED"
+    assert result.navigation["speed"] == 0.0
+
+
+def test_nav_obstacle_left_steers_right():
+    """Obstacle on left → steering should be positive (right)."""
+    nav = NavigationStage()
+    # Obstacle in left third (0-33% of frame), clear elsewhere
+    depth_raw = _make_nav_depth_frame(obstacle_regions=[(0.0, 0.33, 0.3)])
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert result.navigation["status"] == "AVOIDING"
+    assert result.navigation["steering_angle_deg"] > 0, "Should steer right to avoid left obstacle"
+
+
+def test_nav_obstacle_right_steers_left():
+    """Obstacle on right → steering should be negative (left)."""
+    nav = NavigationStage()
+    depth_raw = _make_nav_depth_frame(obstacle_regions=[(0.67, 1.0, 0.3)])
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert result.navigation["status"] == "AVOIDING"
+    assert result.navigation["steering_angle_deg"] < 0, "Should steer left to avoid right obstacle"
+
+
+def test_nav_obstacle_center_steers_around():
+    """Obstacle in center → should steer around (non-zero angle)."""
+    nav = NavigationStage()
+    depth_raw = _make_nav_depth_frame(obstacle_regions=[(0.33, 0.67, 0.3)])
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert result.navigation["status"] == "AVOIDING"
+    assert result.navigation["steering_angle_deg"] != 0, "Should steer around center obstacle"
+
+
+def test_nav_no_depth_clear():
+    """No depth data (webcam mode) → status CLEAR, speed 1.0."""
+    nav = NavigationStage()
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8))
+    result = nav.process(data)
+    assert result.navigation["status"] == "CLEAR"
+    assert result.navigation["speed"] == 1.0
+
+
+def test_nav_safety_override_person_close():
+    """FusionStage priority 0 (person in danger) → STOPPED regardless of gaps."""
+    nav = NavigationStage()
+    depth_raw = _make_nav_depth_frame(clear_m=5.0)
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    data.fused_output = [{"object_class": "person", "distance_m": 0.8, "zone": "center",
+                          "priority": 0, "bbox": [100, 100, 200, 200], "action": "STOP"}]
+    result = nav.process(data)
+    assert result.navigation["status"] == "STOPPED"
+    assert result.navigation["speed"] == 0.0
+
+
+def test_nav_speed_ramps_with_distance():
+    """Speed should ramp from 0 (danger) to 1.0 (warning+)."""
+    nav = NavigationStage()
+    config = DetectionConfig()
+    config.danger_distance = 1.0
+    config.warning_distance = 3.0
+    nav._config = config
+
+    # Obstacle at 2.0m (between danger and warning) → speed should be ~0.5
+    depth_raw = _make_nav_depth_frame(clear_m=2.0)
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    # 2.0m is between 1.0 and 3.0 → t = (2.0-1.0)/(3.0-1.0) = 0.5
+    assert 0.3 < result.navigation["speed"] < 0.7, f"Expected ~0.5, got {result.navigation['speed']}"
+
+
+def test_nav_output_contract():
+    """Navigation output must have all required keys."""
+    nav = NavigationStage()
+    depth_raw = _make_nav_depth_frame(clear_m=5.0)
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    nav_out = result.navigation
+    assert "steering_angle_deg" in nav_out
+    assert "speed" in nav_out
+    assert "status" in nav_out
+    assert "gaps" in nav_out
+    assert "histogram" in nav_out
+    assert "blocked_sectors" in nav_out
+    assert isinstance(nav_out["steering_angle_deg"], float)
+    assert isinstance(nav_out["speed"], float)
+    assert isinstance(nav_out["status"], str)
+    assert isinstance(nav_out["gaps"], list)
+
+
+def test_nav_histogram_correct_sectors():
+    """Histogram should have num_sectors entries."""
+    nav = NavigationStage(num_sectors=12)
+    depth_raw = _make_nav_depth_frame(clear_m=5.0)
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert len(result.navigation["histogram"]) == 12
+    assert len(result.navigation["blocked_sectors"]) == 12
+
+
+def test_nav_steering_clamped():
+    """Steering angle should be clamped to max_steer_deg."""
+    nav = NavigationStage(max_steer_deg=30.0)
+    depth_raw = _make_nav_depth_frame(obstacle_regions=[(0.0, 0.8, 0.3)])
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert abs(result.navigation["steering_angle_deg"]) <= 30.0
+
+
+def test_nav_gap_found_when_partial_block():
+    """Partial blockage should still find a gap (AVOIDING, not BLOCKED)."""
+    nav = NavigationStage()
+    # Block left half, clear right half
+    depth_raw = _make_nav_depth_frame(obstacle_regions=[(0.0, 0.5, 0.3)])
+    data = FrameData(rgb_frame=np.zeros((480, 640, 3), dtype=np.uint8),
+                     depth_frame=depth_raw, depth_scale=0.001)
+    result = nav.process(data)
+    assert result.navigation["status"] == "AVOIDING"
+    assert len(result.navigation["gaps"]) >= 1
+
+
+def test_nav_full_pipeline_with_navigation():
+    """Full pipeline: Depth → YOLO → Fusion → Navigation → Annotation."""
+    config = DetectionConfig()
+    processor = FrameProcessor(config)
+
+    yolo_stage = YOLODetectionStage()
+    yolo_stage._wrapper_rgb = None
+    yolo_stage._wrapper_depth = None
+    yolo_stage._depth_model_path = None
+    processor.add_stage(yolo_stage)
+    processor.add_stage(FusionStage(config=config))
+    processor.add_stage(NavigationStage(config=config))
+    processor.add_stage(VisualAnnotationStage(config=config))
+
+    rgb = np.full((480, 640, 3), 128, dtype=np.uint8)
+    depth_m = np.full((480, 640), 5.0, dtype=np.float32)
+    depth_m[200:300, 280:360] = 1.5
+    depth_raw = (depth_m / 0.001).astype(np.uint16)
+
+    result = processor.process(rgb, depth_raw, 0.001)
+    assert result.navigation is not None
+    assert "status" in result.navigation
+    assert "steering_angle_deg" in result.navigation
+
+
 if __name__ == "__main__":
     print("=== FrameProcessor Tests ===\n")
     tests = [
@@ -1054,6 +1245,20 @@ if __name__ == "__main__":
         ("visual annotation with yolo fallback", test_visual_annotation_with_yolo_fallback),
         ("visual annotation danger status", test_visual_annotation_danger_status),
         ("visual annotation modifies in place", test_visual_annotation_modifies_in_place),
+        # NavigationStage
+        ("nav clear path", test_nav_clear_path),
+        ("nav blocked all", test_nav_blocked_all),
+        ("nav obstacle left steers right", test_nav_obstacle_left_steers_right),
+        ("nav obstacle right steers left", test_nav_obstacle_right_steers_left),
+        ("nav obstacle center steers around", test_nav_obstacle_center_steers_around),
+        ("nav no depth clear", test_nav_no_depth_clear),
+        ("nav safety override person close", test_nav_safety_override_person_close),
+        ("nav speed ramps with distance", test_nav_speed_ramps_with_distance),
+        ("nav output contract", test_nav_output_contract),
+        ("nav histogram correct sectors", test_nav_histogram_correct_sectors),
+        ("nav steering clamped", test_nav_steering_clamped),
+        ("nav gap found when partial block", test_nav_gap_found_when_partial_block),
+        ("nav full pipeline with navigation", test_nav_full_pipeline_with_navigation),
         # Integration
         ("full pipeline integration", test_full_pipeline_integration),
         ("pipeline stage error doesnt crash", test_pipeline_stage_error_doesnt_crash),

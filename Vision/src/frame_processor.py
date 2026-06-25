@@ -108,6 +108,7 @@ class FrameData:
     obstacles: List[Dict[str, Any]] = field(default_factory=list)
     detections: List[Any] = field(default_factory=list)
     fused_output: List[Dict[str, Any]] = field(default_factory=list)
+    navigation: Dict[str, Any] = field(default_factory=dict)
 
     metadata: Dict[str, Any] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
@@ -740,8 +741,285 @@ class VisualAnnotationStage(PipelineStage):
         cv2.rectangle(data.rgb_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), status_color, 1)
         cv2.putText(data.rgb_frame, status_text, (sx, sy), font, scale, status_color, thickness, cv2.LINE_AA)
 
+        # 3. Gambar Navigation HUD (steering arrow + speed)
+        if data.navigation:
+            nav = data.navigation
+            nav_status = nav.get("status", "CLEAR")
+            steer_deg = nav.get("steering_angle_deg", 0.0)
+            speed = nav.get("speed", 0.0)
+
+            if nav_status == "STOPPED":
+                nav_color = (60, 60, 255)
+            elif nav_status == "BLOCKED":
+                nav_color = (60, 60, 255)
+            elif nav_status == "AVOIDING":
+                nav_color = (0, 165, 255)
+            else:
+                nav_color = (50, 205, 50)
+
+            # Steering text (bottom-left)
+            nav_text = f"NAV: {nav_status} | STEER {steer_deg:+.0f} deg | SPD {speed:.0%}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            scale = 0.6
+            thickness = 2
+            (nt_w, nt_h), _ = cv2.getTextSize(nav_text, font, scale, thickness)
+            nx, ny = 25, data.rgb_frame.shape[0] - 20
+            cv2.rectangle(data.rgb_frame, (nx - 8, ny - nt_h - 6), (nx + nt_w + 8, ny + 6), (30, 30, 30), -1)
+            cv2.putText(data.rgb_frame, nav_text, (nx, ny), font, scale, nav_color, thickness, cv2.LINE_AA)
+
+            # Steering arrow (bottom-center of frame)
+            cx = data.rgb_frame.shape[1] // 2
+            cy = data.rgb_frame.shape[0] - 40
+            arrow_len = 60
+            angle_rad = np.radians(steer_deg)
+            ax = int(cx + arrow_len * np.sin(angle_rad))
+            ay = int(cy - arrow_len * np.cos(angle_rad))
+            cv2.arrowedLine(data.rgb_frame, (cx, cy), (ax, ay), nav_color, 3, tipLength=0.3)
+
         return data
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NavigationStage — Gap-based steering (VFH-lite)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class NavigationStage(PipelineStage):
+    """Stage navigasi: polar histogram + gap-based steering.
+
+    Membangun histogram polar dari depth frame (N sektor horizontal),
+    menemukan gap yang dapat dilalui, dan merekomendasikan sudut kemudi.
+
+    Kontrak input:   FrameData.depth_frame + FrameData.fused_output
+    Kontrak output:  FrameData.navigation (Dict)
+
+    Output format:
+        {
+            "steering_angle_deg": float,   # -45 (kiri) sampai +45 (kanan), 0 = lurus
+            "speed": float,                # 0.0 (stop) sampai 1.0 (full)
+            "status": str,                 "CLEAR" | "AVOIDING" | "BLOCKED" | "STOPPED"
+            "gaps": List[Dict],            # Daftar gap yang dapat dilalui
+            "histogram": List[float],      # Min distance per sector (untuk debugging)
+            "blocked_sectors": List[bool], # Sector terhalang atau tidak
+        }
+    """
+
+    def __init__(
+        self,
+        config: Optional[DetectionConfig] = None,
+        num_sectors: int = 18,
+        robot_width_m: float = 0.5,
+        safety_margin_m: float = 0.3,
+        max_steer_deg: float = 45.0,
+        hysteresis_frames: int = 5,
+    ) -> None:
+        super().__init__("NavigationStage")
+        self._config = config or DetectionConfig()
+        self._num_sectors = num_sectors
+        self._robot_width_m = robot_width_m
+        self._safety_margin_m = safety_margin_m
+        self._max_steer_deg = max_steer_deg
+        self._hysteresis_frames = hysteresis_frames
+
+        # Minimum clearance needed for robot to pass
+        self._min_gap_m = robot_width_m + 2 * safety_margin_m
+
+        # Hysteresis state: stick with current steering for N frames
+        self._prev_steering = 0.0
+        self._hysteresis_counter = 0
+
+    def _build_polar_histogram(self, depth_frame: np.ndarray, depth_scale: float) -> np.ndarray:
+        """Build polar histogram: min distance per sector.
+
+        Divides the depth frame into N horizontal sectors and computes
+        the 10th percentile distance within each sector (robust to noise).
+        """
+        h, w = depth_frame.shape[:2]
+        sector_width = w // self._num_sectors
+
+        # Convert to meters once
+        depth_m = depth_frame.astype(np.float32) * depth_scale
+
+        # Valid range mask
+        min_m = self._config.min_distance if self._config else 0.3
+        max_m = self._config.max_distance if self._config else 5.0
+        valid_mask = (depth_m >= min_m) & (depth_m <= max_m)
+
+        histogram = np.full(self._num_sectors, max_m, dtype=np.float32)
+
+        for i in range(self._num_sectors):
+            x_start = i * sector_width
+            x_end = x_start + sector_width if i < self._num_sectors - 1 else w
+            sector = depth_m[:, x_start:x_end]
+            sector_valid = sector[valid_mask[:, x_start:x_end]]
+
+            if sector_valid.size > 0:
+                # 10th percentile: robust min (ignores outlier pixels)
+                histogram[i] = np.percentile(sector_valid, 10)
+
+        return histogram
+
+    def _find_gaps(self, histogram: np.ndarray, blocked: np.ndarray) -> List[Dict[str, Any]]:
+        """Find contiguous free sectors (gaps) in the blocked array."""
+        gaps = []
+        i = 0
+        n = len(blocked)
+        while i < n:
+            if not blocked[i]:
+                start = i
+                while i < n and not blocked[i]:
+                    i += 1
+                end = i  # exclusive
+                gap_width_sectors = end - start
+                center_sector = (start + end - 1) / 2.0
+
+                # Min distance within this gap
+                gap_depths = histogram[start:end]
+                min_dist = float(gap_depths.min())
+
+                # Convert sector index to angle: sector 0 = leftmost = -45 deg
+                angle_per_sector = (2 * self._max_steer_deg) / n
+                center_angle = -self._max_steer_deg + center_sector * angle_per_sector
+
+                gaps.append({
+                    "start_sector": start,
+                    "end_sector": end,
+                    "width_sectors": gap_width_sectors,
+                    "center_angle_deg": center_angle,
+                    "min_distance_m": min_dist,
+                    "angular_width_deg": gap_width_sectors * angle_per_sector,
+                })
+            else:
+                i += 1
+        return gaps
+
+    def _score_gap(self, gap: Dict[str, Any], num_sectors: int) -> float:
+        """Score a gap: wider + closer to center + deeper = better."""
+        # Width score: wider gap is safer
+        width_score = gap["width_sectors"] / num_sectors
+
+        # Center bias: prefer gaps near center (0 deg), penalize extreme angles
+        center_bias = 1.0 - (abs(gap["center_angle_deg"]) / self._max_steer_deg)
+
+        # Clearance score: deeper gap allows faster travel
+        max_m = self._config.max_distance if self._config else 5.0
+        clearance_score = min(gap["min_distance_m"] / max_m, 1.0)
+
+        # Weighted sum: center bias most important, then width, then clearance
+        return 0.5 * center_bias + 0.3 * width_score + 0.2 * clearance_score
+
+    def _compute_speed(self, min_dist_ahead: float, danger_dist: float, warning_dist: float) -> float:
+        """Map distance to speed: full speed when far, linear ramp, stop when close."""
+        if min_dist_ahead < danger_dist:
+            return 0.0
+        if min_dist_ahead >= warning_dist:
+            return 1.0
+        # Linear ramp between danger and warning
+        t = (min_dist_ahead - danger_dist) / (warning_dist - danger_dist)
+        return t
+
+    def process(self, data: FrameData) -> FrameData:
+        # Default output
+        nav_output = {
+            "steering_angle_deg": 0.0,
+            "speed": 0.0,
+            "status": "BLOCKED",
+            "gaps": [],
+            "histogram": [],
+            "blocked_sectors": [],
+        }
+
+        # Safety override: if FusionStage found priority 0 (person in danger zone), STOP
+        if data.fused_output:
+            for item in data.fused_output:
+                if item.get("priority") == 0:
+                    nav_output["status"] = "STOPPED"
+                    nav_output["steering_angle_deg"] = self._prev_steering
+                    data.navigation = nav_output
+                    return data
+
+        # Need depth data for navigation
+        if not data.has_depth():
+            nav_output["status"] = "CLEAR"
+            nav_output["speed"] = 1.0
+            data.navigation = nav_output
+            return data
+
+        danger_dist = self._config.danger_distance if self._config else 1.5
+        warning_dist = self._config.warning_distance if self._config else 3.0
+
+        # 1. Build polar histogram
+        histogram = self._build_polar_histogram(data.depth_frame, data.depth_scale)
+
+        # 2. Mark blocked sectors (obstacle closer than min_gap_m)
+        blocked = histogram < self._min_gap_m
+
+        # 3. Find navigable gaps
+        gaps = self._find_gaps(histogram, blocked)
+
+        # 4. Determine status
+        num_blocked = int(blocked.sum())
+        if num_blocked == 0:
+            status = "CLEAR"
+        elif gaps:
+            status = "AVOIDING"
+        else:
+            status = "BLOCKED"
+
+        # 5. Select best gap and compute steering
+        steering_angle = 0.0
+        if status == "CLEAR":
+            steering_angle = 0.0
+        elif status == "AVOIDING" and gaps:
+            # Score all gaps, pick best
+            scored = [(self._score_gap(g, self._num_sectors), g) for g in gaps]
+            scored.sort(key=lambda x: x[0], reverse=True)
+            best_gap = scored[0][1]
+            steering_angle = best_gap["center_angle_deg"]
+
+            # Hysteresis: if previous steering is still viable, stick with it
+            if self._hysteresis_counter > 0 and self._prev_steering != 0.0:
+                prev_angle = self._prev_steering
+                # Check if previous angle is still within a free gap
+                angle_per_sector = (2 * self._max_steer_deg) / self._num_sectors
+                prev_sector = int((prev_angle + self._max_steer_deg) / angle_per_sector)
+                if 0 <= prev_sector < self._num_sectors and not blocked[prev_sector]:
+                    steering_angle = prev_angle
+                    self._hysteresis_counter -= 1
+                else:
+                    self._prev_steering = steering_angle
+                    self._hysteresis_counter = self._hysteresis_frames
+            else:
+                self._prev_steering = steering_angle
+                self._hysteresis_counter = self._hysteresis_frames
+        # BLOCKED: steering stays 0, robot should rotate to scan
+
+        # 6. Compute speed based on distance directly ahead (center sectors)
+        center_start = self._num_sectors // 3
+        center_end = 2 * self._num_sectors // 3
+        min_dist_ahead = float(histogram[center_start:center_end].min())
+
+        if status == "STOPPED":
+            speed = 0.0
+        elif status == "BLOCKED":
+            speed = 0.0
+        else:
+            speed = self._compute_speed(min_dist_ahead, danger_dist, warning_dist)
+
+        # Clamp steering to FOV
+        steering_angle = max(-self._max_steer_deg, min(self._max_steer_deg, steering_angle))
+
+        nav_output = {
+            "steering_angle_deg": float(steering_angle),
+            "speed": float(speed),
+            "status": status,
+            "gaps": gaps,
+            "histogram": histogram.tolist(),
+            "blocked_sectors": blocked.tolist(),
+        }
+
+        data.navigation = nav_output
+        return data
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

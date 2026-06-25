@@ -23,6 +23,8 @@ class RadarView(QWidget):
         self.setFixedSize(RADAR_WIDTH_PX, RADAR_HEIGHT_PX)
 
         self._obstacles = []
+        self._steering_angle = 0.0
+        self._nav_status = "IDLE"
         self._sweep = 45.0
         self._sweep_dir = 1
 
@@ -42,8 +44,18 @@ class RadarView(QWidget):
         self._obstacles = obstacles
         self.update()
 
+    def update_navigation(self, nav_data: dict):
+        """Update steering arrow from NavigationStage output."""
+        if not nav_data:
+            return
+        self._steering_angle = nav_data.get("steering_angle_deg", 0.0)
+        self._nav_status = nav_data.get("status", "IDLE")
+        self.update()
+
     def clear_obstacles(self):
         self._obstacles = []
+        self._steering_angle = 0.0
+        self._nav_status = "IDLE"
         self.update()
 
     # ------------------------------------------------------------------ #
@@ -194,5 +206,28 @@ class RadarView(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(color))
             p.drawEllipse(QPointF(bx, by), 5, 5)
+
+        # Steering recommendation arrow (dynamic)
+        if self._nav_status not in ("IDLE", ""):
+            # Map steering angle (-45..+45) to radar angle (135..45)
+            radar_angle = 90 - self._steering_angle
+            arrow_r = r * 0.7
+            ax = cx + arrow_r * math.cos(math.radians(radar_angle))
+            ay = cy - arrow_r * math.sin(math.radians(radar_angle))
+
+            if self._nav_status in ("STOPPED", "BLOCKED"):
+                arrow_color = QColor("#f38ba8")
+            elif self._nav_status == "AVOIDING":
+                arrow_color = QColor("#fab387")
+            else:
+                arrow_color = QColor("#50f050")
+
+            pen = QPen(arrow_color, 3)
+            p.setPen(pen)
+            p.drawLine(QPointF(cx, cy), QPointF(ax, ay))
+            # Arrowhead
+            p.setBrush(QBrush(arrow_color))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(ax, ay), 4, 4)
 
         p.end()

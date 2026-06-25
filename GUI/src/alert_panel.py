@@ -148,10 +148,49 @@ class AlertPanel(QWidget):
 
         layout.addWidget(self.info_box)
 
+        # ── Navigation Panel ───────────────────────────────────────
+        self.nav_box = QFrame()
+        self.nav_box.setObjectName("navBox")
+        nav_layout = QVBoxLayout(self.nav_box)
+        nav_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        nav_layout.setSpacing(4)
+
+        self.lbl_nav_title = QLabel("NAVIGATION")
+        self.lbl_nav_title.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self.lbl_nav_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_nav_title.setStyleSheet("color: #585b70; background: transparent;")
+
+        self.lbl_nav_status = QLabel("IDLE")
+        self.lbl_nav_status.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self.lbl_nav_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_nav_status.setStyleSheet("color: #50f050; background: transparent;")
+
+        self.lbl_nav_steer = QLabel("STEER: 0 deg")
+        self.lbl_nav_steer.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.lbl_nav_steer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_nav_steer.setStyleSheet("color: #89b4fa; background: transparent;")
+
+        self.lbl_nav_speed = QLabel("SPEED: 0%")
+        self.lbl_nav_speed.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.lbl_nav_speed.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_nav_speed.setStyleSheet("color: #89b4fa; background: transparent;")
+
+        nav_layout.addWidget(self.lbl_nav_title)
+        nav_layout.addWidget(self.lbl_nav_status)
+        nav_layout.addWidget(self.lbl_nav_steer)
+        nav_layout.addWidget(self.lbl_nav_speed)
+
+        layout.addWidget(self.nav_box)
+
     def _apply_style(self):
         self.setStyleSheet("""
             QWidget { background-color: transparent; }
             #infoBox {
+                background-color: #313244;
+                border: 2px solid #45475a;
+                border-radius: 15px;
+            }
+            #navBox {
                 background-color: #313244;
                 border: 2px solid #45475a;
                 border-radius: 15px;
@@ -203,3 +242,23 @@ class AlertPanel(QWidget):
                 self._prev_status = "safe"
                 self._apply_status_style(_STYLE_SAFE)
             self.lbl_status.setText("SAFE")
+
+    def update_navigation(self, nav_data: dict):
+        """Update navigation display from NavigationStage output."""
+        if not nav_data:
+            return
+
+        status = nav_data.get("status", "IDLE")
+        steer = nav_data.get("steering_angle_deg", 0.0)
+        speed = nav_data.get("speed", 0.0)
+
+        self.lbl_nav_status.setText(status)
+        self.lbl_nav_steer.setText(f"STEER: {steer:+.0f} deg")
+        self.lbl_nav_speed.setText(f"SPEED: {speed:.0%}")
+
+        if status == "STOPPED" or status == "BLOCKED":
+            self.lbl_nav_status.setStyleSheet("color: #f38ba8; background: transparent;")
+        elif status == "AVOIDING":
+            self.lbl_nav_status.setStyleSheet("color: #fab387; background: transparent;")
+        else:
+            self.lbl_nav_status.setStyleSheet("color: #50f050; background: transparent;")

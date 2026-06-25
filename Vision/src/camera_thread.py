@@ -42,6 +42,7 @@ class CameraThread(QThread):
     frame_pair_ready = pyqtSignal(QImage, QImage)
     distance_info_ready = pyqtSignal(str, object, str)
     obstacles_ready = pyqtSignal(list)
+    navigation_ready = pyqtSignal(dict)
     error = pyqtSignal(str)
 
     def __init__(
@@ -236,9 +237,13 @@ class CameraThread(QThread):
             self.distance_info_ready.emit(label, dist, zone)
 
             final_obstacles = []
+            nav_data = {}
             if self._processor is not None and result is not None:
                 final_obstacles = result.fused_output if result.fused_output else result.obstacles
+                nav_data = result.navigation or {}
             self.obstacles_ready.emit(final_obstacles)
+            if nav_data:
+                self.navigation_ready.emit(nav_data)
 
         self._acq_running = False
         self._acq_thread.join(timeout=1.0)
@@ -286,6 +291,8 @@ class CameraThread(QThread):
             self.frame_pair_ready.emit(rgb_qimg, QImage())
             self.distance_info_ready.emit("Depth Tidak Tersedia", None, "center")
             self.obstacles_ready.emit([])
+            if result is not None and result.navigation:
+                self.navigation_ready.emit(result.navigation)
 
         self._acq_running = False
         self._acq_thread.join(timeout=1.0)

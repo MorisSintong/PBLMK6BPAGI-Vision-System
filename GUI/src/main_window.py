@@ -8,7 +8,7 @@ from GUI.src.controls_panel import ControlsPanel
 from GUI.src.depth_view import DepthView
 from GUI.src.radar_view import RadarView
 from Vision.inc.detection_config import DetectionConfig
-from Vision.src.frame_processor import FrameProcessor, FusionStage, YOLODetectionStage, VisualAnnotationStage
+from Vision.src.frame_processor import FrameProcessor, FusionStage, NavigationStage, YOLODetectionStage, VisualAnnotationStage
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QMainWindow,
@@ -101,6 +101,9 @@ class MainWindow(QMainWindow):
         # ── Add FusionStage (R4) ────────────────────────────────────
         self.frame_processor.add_stage(FusionStage(config=config))
 
+        # ── Add NavigationStage (R1) ───────────────────────────────
+        self.frame_processor.add_stage(NavigationStage(config=config))
+
         # ── Add VisualAnnotationStage (R5) ──────────────────────────
         self.frame_processor.add_stage(VisualAnnotationStage(config=config))
 
@@ -113,6 +116,8 @@ class MainWindow(QMainWindow):
         self.camera_thread.frame_pair_ready.connect(self.area_kamera.update_frames)
         self.camera_thread.distance_info_ready.connect(self.alert_panel.update_info)
         self.camera_thread.obstacles_ready.connect(self._on_obstacles_ready)
+        self.camera_thread.navigation_ready.connect(self.alert_panel.update_navigation)
+        self.camera_thread.navigation_ready.connect(self.radar.update_navigation)
         self.camera_thread.error.connect(self._on_camera_error)
         self.camera_thread.set_depth_thresholds(
             self.controls_panel.spin_depth_min.value(),
@@ -148,6 +153,7 @@ class MainWindow(QMainWindow):
     def _on_camera_stop(self):
         self.camera_thread.stop_capture()
         self.alert_panel.update_info("Menunggu...", None)
+        self.alert_panel.update_navigation({})
         self.radar.clear_obstacles()
 
     def _on_obstacles_ready(self, obstacles: list):
