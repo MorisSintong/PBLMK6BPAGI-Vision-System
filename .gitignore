@@ -118,3 +118,8 @@ coverage.xml
 8.4.*
 pip-log.*
 
+# =========================
+# R5 standalone prototype (not part of pipeline)
+# =========================
+Vision/src/YOLO/
+
