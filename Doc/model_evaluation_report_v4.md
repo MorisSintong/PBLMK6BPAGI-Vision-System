@@ -20,7 +20,7 @@ Hasil evaluasi menunjukkan bahwa iterasi model terbaru (**`ModelRGB_V4.2.pt`** d
 
 ## 3. Results: RGB Models Comparison
 
-Pengujian dilakukan menggunakan `DatasetRGB_V4` (split *test*).
+Pengujian dilakukan menggunakan `DatasetRGB_V4.2-2668 Frame` (split *test*).
 
 | Metric | ModelRGB_V4_Beta.pt (Detection) | ModelRGB_V4.2.pt (Segmentation) | Status V4.2 |
 |---|---|---|---|
