@@ -76,8 +76,8 @@ class MainWindow(QMainWindow):
         # ── Add YOLO stage (R2) ──────────────────────────────────────
         project_root = Path(__file__).resolve().parent.parent.parent
         models_dir = project_root / "Vision" / "models"
-        yolo_model_path = models_dir / "model_v3.pt"
-        depth_model_path = models_dir / "modelDepth.pt"
+        yolo_model_path = models_dir / "ModelRGB_V4.2.pt"
+        depth_model_path = models_dir / "ModelDepth_V4.pt"
         yolo_model_root = project_root / "yolov8n.pt"
         best_model_path = models_dir / "security_best.pt"
         

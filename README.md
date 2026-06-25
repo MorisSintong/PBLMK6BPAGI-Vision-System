@@ -6,8 +6,9 @@ Modul vision untuk security robot berbasis **PyQt6 + OpenCV + Intel RealSense D4
 
 Aplikasi desktop untuk obstacle avoidance pada security robot:
 - **Depth sensing** — Intel RealSense D455 dengan multi-stage filtering (decimation, spatial, temporal, hole-filling)
-- **Object detection** — YOLOv8 (GPU-accelerated, ~11ms/frame on RTX A4000)
-- **Sensor fusion** — Depth + YOLO untuk situational awareness
+- **Object detection** — YOLOv8 dual-model (RGB + Depth), GPU-accelerated with FP16 on RTX A4000
+- **Dark mode adaptation** — CLAHE preprocessing + automatic model swap to depth model in low light
+- **Sensor fusion** — Depth + YOLO overlap matching with adaptive thresholds and priority matrix
 - **Real-time GUI** — PyQt6 dengan 4 tampilan: RGB, Depth, Overlay, Radar 180°
 
 ## Arsitektur
@@ -17,26 +18,35 @@ main.py → MainWindow
               ├── DepthView (RGB / Depth / Overlay)
               ├── ControlsPanel (start/stop, thresholds, view mode)
               ├── AlertPanel (object info + zone + action)
-              ├── RadarView (180° semicircle)
+              ├── RadarView (180° semicircle, cached static background)
               └── CameraThread
-                    ├── RealSense capture + depth filters
+                    ├── RealSense acquisition thread (separate thread + queue)
                     └── FrameProcessor (Chain of Responsibility)
-                          ├── DepthProcessingStage (colormap + multi-zone)
-                          ├── YOLODetectionStage (YOLOv8)
-                          └── FusionStage (placeholder)
+                          ├── DepthProcessingStage (LUT colormap + multi-zone)
+                          ├── YOLODetectionStage (dual-model swap + CLAHE)
+                          ├── FusionStage (overlap matching + priority matrix)
+                          └── VisualAnnotationStage (HUD rendering)
 ```
 
 ## Fitur Utama
 
 | Fitur | Status | Detail |
 |-------|--------|--------|
-| RealSense D455 capture | ✅ | 640x480 @ 30fps, depth + RGB streams |
-| Depth filters | ✅ | Decimation, spatial, temporal, hole-filling |
+| RealSense D455 capture | ✅ | 640x480 @ 30fps, depth + RGB streams, unfiltered depth for model |
+| Depth filters | ✅ | Spatial, temporal, hole-filling (decimation configurable) |
 | Multi-zone detection | ✅ | LEFT / CENTER / RIGHT zones |
-| YOLOv8 integration | ✅ | GPU inference, configurable model |
-| Radar view | ✅ | 180° real-time obstacle display |
-| Alert panel | ✅ | Object info + action recommendations |
-| Threshold controls | ✅ | Adjustable danger/warning distances |
+| YOLOv8 dual-model | ✅ | `ModelRGB_V4.2.pt` (normal) + `ModelDepth_V4.pt` (dark mode) |
+| FP16 inference | ✅ | Auto-detected on CUDA GPUs, ~2x faster on Tensor Cores |
+| GPU warm-up | ✅ | Dummy inference at load to pre-compile CUDA kernels |
+| CLAHE dark mode | ✅ | LAB color space enhancement for dim scenes |
+| LUT depth colormap | ✅ | Pre-computed 256-entry LUT, ~3x faster than mask approach |
+| Sensor fusion | ✅ | Overlap matching + direct depth sampling + priority matrix |
+| Visual annotation | ✅ | HUD corner brackets, labels, global status bar |
+| Radar view | ✅ | 180° real-time, cached static background pixmap |
+| Alert panel | ✅ | Status-change-only stylesheet updates (no redundant recalc) |
+| Threshold controls | ✅ | Adjustable danger/warning distances, propagates to all stages |
+| Lazy depth model | ✅ | Depth model loaded only on first dark frame (saves VRAM) |
+| Separate acquisition thread | ✅ | Camera capture decoupled from processing via queue |
 
 ## Struktur Project
 
@@ -44,29 +54,49 @@ main.py → MainWindow
 ├── main.py                    # Entry point
 ├── ROLES.md                   # Role assignments
 ├── PROGRESS.md                # Progress documentation
-├── problems.md                # Critical audit report
+├── flow.md                    # Architecture & data flow documentation
+├── data-collection.md         # Dataset acquisition guide (R5)
 ├── environment.yml            # Conda/pip dependencies
 ├── pyproject.toml             # Ruff + pytest config
-├── tests/                     # Test suite (39 tests)
+├── tests/                     # Test suite (123 tests)
+│   ├── test_frame_processor.py    # 69 tests — pipeline, fusion, dark mode, annotation
+│   ├── test_obstacle_detector.py  # 31 tests — detection, zones, filtering, thread safety
+│   └── test_camera_thread.py      # 24 tests — signals, thresholds, QImage, cache
 ├── Vision/
 │   ├── src/                   # Core vision modules
-│   │   ├── camera_thread.py   # Capture + filter + pipeline
-│   │   ├── frame_processor.py # Pipeline orchestrator
-│   │   ├── obstacle_detector.py # Depth obstacle detection
-│   │   ├── yolowrapper.py     # YOLOv8 inference
+│   │   ├── camera_thread.py   # Capture + filter + pipeline (separate acq thread)
+│   │   ├── frame_processor.py # Pipeline orchestrator (4 stages)
+│   │   ├── obstacle_detector.py # Depth obstacle detection (no frame copy)
+│   │   ├── yolowrapper.py     # YOLOv8 inference (FP16, warm-up, batch transfer)
 │   │   └── recorder.py        # Recording utility
 │   ├── models/                # (.gitignore) Model weights
+│   │   ├── ModelRGB_V4.2.pt   # RGB model (R2 latest)
+│   │   ├── ModelDepth_V4.pt   # Depth model (R2 latest, trained on unfiltered depth)
+│   │   └── security_best.pt   # Fallback model
 │   └── inc/                   # Config + logging
-└── GUI/
-    ├── src/                   # PyQt6 components
-    └── inc/                   # UI config + styles
+│       ├── detection_config.py # Detection thresholds
+│       ├── camera_config.py   # Camera parameters (RealSense + webcam)
+│       └── logging_config.py  # Centralized logging
+├── GUI/
+│   ├── src/                   # PyQt6 components
+│   │   ├── main_window.py     # Window layout + wiring
+│   │   ├── depth_view.py      # Camera display (3 modes, visible-only updates)
+│   │   ├── controls_panel.py  # Start/stop + thresholds
+│   │   ├── alert_panel.py     # Object info + alert (cached stylesheets)
+│   │   └── radar_view.py      # 180° radar (cached background pixmap)
+│   └── inc/                   # UI config + styles
+│       ├── ui_config.py       # UI constants + thresholds
+│       └── styles.py          # Global stylesheet + color constants
+└── Doc/
+    ├── problems_audit_report.md  # Historical audit report (archived)
+    └── model_evaluation_report_v4.md  # R5 model evaluation
 ```
 
 ## Requirements
 
 - Python 3.10
 - Conda (disarankan)
-- NVIDIA GPU (optional, untuk YOLOv8 GPU inference)
+- NVIDIA GPU (optional, untuk YOLOv8 GPU inference with FP16)
 - Intel RealSense D455 (optional, webcam sebagai fallback)
 
 ## Setup
@@ -80,8 +110,8 @@ cd PBLMK6BPAGI-Vision-System
 conda env create -f environment.yml
 conda activate depth-obstacle-detector
 
-# Download model weights (optional)
-# Place yolov8n.pt atau security_best.pt di Vision/models/
+# Download model weights
+# Place ModelRGB_V4.2.pt and ModelDepth_V4.pt in Vision/models/
 ```
 
 ## Menjalankan Aplikasi
@@ -97,44 +127,53 @@ python main.py
 python -m pytest tests/ -v
 
 # Run specific test file
-python -m pytest tests/test_obstacle_detector.py -v
+python -m pytest tests/test_frame_processor.py -v
 ```
 
 ## Test Coverage
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `test_frame_processor.py` | 8 | Pipeline orchestration, stages, latency |
-| `test_obstacle_detector.py` | 16 | Detection, zones, thread safety, buffer |
-| `test_camera_thread.py` | 15 | Signals, thresholds, QImage conversion |
-| **Total** | **39** | |
+| `test_frame_processor.py` | 69 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zones, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model), VisualAnnotationStage, full pipeline integration |
+| `test_obstacle_detector.py` | 31 | Detection, zones, filtering (min_area, max_area_ratio, distance), priority, frame handling (no copy regression), buffer reuse, thread safety, output contract |
+| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals |
+| **Total** | **123** | |
 
 ## Pipeline Architecture
 
-Pipeline menggunakan pola **Chain of Responsibility**:
+Pipeline menggunakan pola **Chain of Responsibility** dengan 4 stage:
 - Setiap stage mengimplementasikan `PipelineStage` ABC
 - Data mengalir sebagai `FrameData` dataclass
 - Stage bisa di-enable/disable secara modular
+- Exception di stage manapun ditangkap, error dicatat di `FrameData.errors`
 
 ```python
 # Contoh penggunaan
 config = DetectionConfig()
 processor = FrameProcessor(config)
-processor.add_stage(YOLODetectionStage("yolov8n.pt"))
+processor.add_stage(YOLODetectionStage(
+    model_path="Vision/models/ModelRGB_V4.2.pt",
+    depth_model_path="Vision/models/ModelDepth_V4.pt",
+))
+processor.add_stage(FusionStage(config=config))
+processor.add_stage(VisualAnnotationStage(config=config))
 
 result = processor.process(rgb_frame, depth_frame, depth_scale=0.001)
-# result.rgb_frame — frame teranotasi
-# result.depth_colormap — visualisasi zona bahaya
-# result.obstacles — daftar obstacle
+# result.rgb_frame — frame teranotasi (HUD)
+# result.depth_colormap — visualisasi zona bahaya (LUT)
+# result.obstacles — daftar obstacle dari depth
 # result.detections — deteksi YOLO
+# result.fused_output — hasil fusion (class + distance + priority)
 ```
 
 ## Catatan
 
 - Dukungan D455 menggunakan `pyrealsense2`
-- Jika RealSense tidak tersedia, aplikasi memakai webcam biasa (RGB)
+- Jika RealSense tidak tersedia, aplikasi memakai webcam biasa (RGB only)
 - Pada Windows, capture kamera memprioritaskan backend DirectShow
 - Model weights tidak di-track di git (lihat `.gitignore`)
+- Dual-model: RGB model untuk kondisi terang, depth model untuk kondisi gelap (di-load lazy)
+- Unfiltered depth frame disimpan sebelum RS filters untuk depth model inference
 
 ## Team
 

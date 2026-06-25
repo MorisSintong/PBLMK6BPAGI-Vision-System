@@ -163,7 +163,7 @@ model = YOLO("yolov8n.pt")  # Pre-trained on COCO (80 classes)
 
 results = model.predict(
     source="frames/",
-    imgsz=416,
+    imgsz=320,
     conf=0.3,
     save_txt=True,          # Save labels in YOLO format
     project="dataset/",
@@ -293,7 +293,7 @@ model = YOLO("yolov8n.pt")  # Start from pre-trained weights
 results = model.train(
     data="dataset/data.yaml",
     epochs=100,
-    imgsz=416,
+    imgsz=320,
     batch=16,
     device=0,                # GPU (use "cpu" if no GPU)
     project="runs/train",
@@ -338,7 +338,7 @@ model = YOLO("runs/train/security_robot_v1/weights/best.pt")
 
 metrics = model.val(
     data="dataset/data.yaml",
-    imgsz=416,
+    imgsz=320,
     device=0,
 )
 
@@ -362,7 +362,7 @@ If one class is significantly worse, collect more data for that class.
 ### 8.3 Confusion Matrix
 
 ```python
-model.val(data="dataset/data.yaml", plots=True)
+model.val(data="dataset/data.yaml", plots=True, imgsz=320)
 # Generates confusion_matrix.png in runs/val/
 ```
 

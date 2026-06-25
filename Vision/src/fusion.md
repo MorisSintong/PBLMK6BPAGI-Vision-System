@@ -11,7 +11,8 @@ CameraThread
   └─ FrameProcessor
        ├─ Stage A: DepthProcessingStage (R3)  → FrameData.obstacles
        ├─ Stage B: YOLODetectionStage (R2)    → FrameData.detections
-       └─ Stage C: FusionStage (R4)           → FrameData.fused_output  ← THIS
+       ├─ Stage C: FusionStage (R4)           → FrameData.fused_output  ← THIS
+       └─ Stage D: VisualAnnotationStage (R1) → FrameData.rgb_frame (HUD)
 ```
 
 ---
@@ -23,7 +24,7 @@ CameraThread
 ```python
 [
     {
-        "bbox":        [x, y, w, h],          # OpenCV format, pixels
+        "bbox":        [x, y, w, h],          # OpenCV xywh format, pixels
         "distance_m":  float,                  # meters (5th percentile)
         "zone":        "left"|"center"|"right",
         "area_px":     int,                    # cv2.contourArea — actual blob pixels
@@ -47,191 +48,170 @@ CameraThread
 ]
 ```
 
----
-
-## The Matching Problem
-
-YOLO and Depth are **independent sensors** with different algorithms:
-
-| | YOLO | Depth |
-|---|---|---|
-| Input | RGB image | 16-bit depth map |
-| Algorithm | Neural network (blob detection) | Contour finding (threshold + morphology) |
-| Output bbox | Tight around visible object | Bounding rect around depth contour |
-| Knows class? | Yes ("person", "chair") | No ("obstacle") |
-| Knows distance? | No | Yes (meters) |
-
-They produce **different bounding boxes for the same physical object**. FusionStage must match them.
-
----
-
-## Overlap Metric: Why Not IoU?
-
-Standard IoU (Intersection over Union) fails in our scenario:
-
-```
-YOLO detects a full "person" (head to toe):     Depth clusters only the closest points
-                                                (e.g. the person's chest):
-
-┌──────────────────────┐                         ┌───┐
-│                      │                         │░░░│
-│     YOLO box         │                         │░░░│  Depth box
-│     (200 × 500px)    │                         │░░░│  (80 × 100px)
-│                      │                         └───┘
-│         ┌───┐        │
-│         │░░░│        │  ← chest is INSIDE the person box
-│         │░░░│        │
-│         └───┘        │
-│                      │
-└──────────────────────┘
-
-IoU = intersection / union
-    = 8000 / (100000 + 8000 - 8000)
-    = 8000 / 100000
-    = 0.08  →  REJECTED (below 0.3 threshold)
-```
-
-The depth blob is **completely inside** the YOLO box, but IoU penalizes the size mismatch and rejects a valid match.
-
-## Why `intersection / depth_area` Is Correct
-
-```
-ratio = intersection / depth_area
-      = 8000 / 8000
-      = 1.0  →  MATCHED (100% of depth blob covered by YOLO)
-```
-
-This asks: **"What portion of the depth blob is explained by the YOLO detection?"**
-
-If the answer is high, the YOLO class is a good label for that depth blob.
-
----
-
-## The Bounding Box Inflation Problem
-
-`cv2.boundingRect(contour)` returns an **Axis-Aligned Bounding Box (AABB)** around the contour. For irregular shapes, the AABB includes empty space:
-
-```
-Actual depth blob (contour pixels):       cv2.boundingRect (AABB):
-
-. . . X X X X                             X X X X X X X
-. . . X X X X                             X X X X X X X
-. . . X X X X                             X X X X X X X
-X X X X X X X                             X X X X X X X
-X X X X X X X                             X X X X X X X
-X X X X . . .                             X X X X X X X
-X X X X . . .                             X X X X X X X
-
-contourArea = 36 px                       boundingRect = 7×7 = 49 px
-                                           (includes empty corners)
-```
-
-### Impact on Overlap Ratio
-
-Using AABB area as denominator **deflates** the ratio:
-
-| Shape | Contour Area | AABB Area | Ratio with AABB | Ratio with contourArea |
-|---|---|---|---|---|
-| L-shape | 36 | 49 | 0.73 | 1.00 |
-| Thin arc | 15 | 49 | 0.31 | 0.73 |
-| Scattered | 20 | 64 | 0.31 | 0.80 |
-
-Using `area_px` (contourArea) gives the **true** ratio and avoids rejecting valid matches.
-
-### The Fix
-
-Use `area_px` from the obstacle dict as denominator:
+### From Metadata — `FrameData.metadata`
 
 ```python
-depthBoxArea = obs.get("area_px", w * h)  # fallback to AABB if missing
+{
+    "is_dark": bool,          # True if brightness < 40
+    "rgb_confidence": float,  # 0.0–1.0, min(brightness/128, 1.0)
+}
 ```
+
+---
+
+## Two-Pass Architecture
+
+FusionStage uses a **two-pass** approach:
+
+### PASS 1 — YOLO-first Direct Depth Sampling (skipped in dark mode)
+
+For each YOLO detection, depth is **sampled directly** from the depth frame within the YOLO bbox. This gives both class name and distance in one step — no need to match YOLO boxes to depth obstacle contours.
+
+```python
+for det in data.detections:
+    dist = self._sample_depth_in_bbox(depth_frame, depth_scale, det.bbox)
+    if dist is None:
+        continue  # No valid depth in this bbox — skip
+    matched_yolo_indices.add(i)
+    # Assign class + distance + priority
+```
+
+#### Direct Depth Sampling
+
+```python
+def _sample_depth_in_bbox(depth_frame, depth_scale, bbox):
+    x1, y1, x2, y2 = bbox
+    # Clamp to frame bounds
+    # Use center 60% of bbox to avoid background pixels at edges
+    margin_x = int(bw * 0.2)
+    margin_y = int(bh * 0.2)
+    region = depth_frame[cy1:cy2, cx1:cx2].astype(np.float32) * depth_scale
+    valid = region[(region >= min_dist) & (region <= max_dist)]
+    return float(np.percentile(valid, 25))  # 25th percentile
+```
+
+**Why 25th percentile?** This gives the distance to the **closest surface** of the object — what matters for collision avoidance. The center 60% region avoids background pixels that bleed into the bbox edges.
+
+**Why skip PASS 1 in dark mode?** In dark mode, YOLO runs on the depth colormap (not RGB), so the detections may not correspond to the same objects as the depth obstacles. It's better to rely on PASS 2 depth-only obstacles.
+
+### PASS 2 — Depth-only Obstacles
+
+For depth obstacles not covered by any YOLO detection (from PASS 1), add them as generic "obstacle" class. This catches objects YOLO missed.
+
+```python
+for obs in data.obstacles:
+    # Check if already covered by a YOLO detection
+    if already_covered_by_yolo(obs, matched_yolo_indices):
+        continue
+    # Filter: ignore obstacles > 1.5m (too far for generic obstacle)
+    if dist > 1.5:
+        continue
+    # Add as generic obstacle with demoted priority
+```
+
+---
+
+## Overlap Metric for PASS 2
+
+In PASS 2, we need to check if a depth obstacle is already covered by a YOLO detection. We use:
+
+```
+overlap_ratio = Area(Intersection) / min(Area(Depth), Area(YOLO))
+```
+
+This uses the **smallest area** as denominator, so:
+- A small depth blob inside a large YOLO box → high overlap (correct)
+- A small YOLO box inside a large depth blob → high overlap (correct)
+
+### Why Not IoU?
+
+Standard IoU fails when box sizes differ significantly:
+
+```
+YOLO detects a full "person" (200 × 500px = 100,000 px²)
+Depth clusters only the chest (80 × 100px = 8,000 px²)
+
+IoU = 8,000 / (100,000 + 8,000 - 8,000) = 0.08  →  REJECTED
+
+overlap_ratio = 8,000 / min(8,000, 100,000) = 8,000 / 8,000 = 1.0  →  MATCHED
+```
+
+### Why `min(area)` instead of `depth_area` only?
+
+Using `min(depth_area, yolo_area)` handles both cases:
+- Depth blob small, YOLO box large → denominator = depth_area (same as before)
+- YOLO box small, depth blob large → denominator = yolo_area (prevents false match)
+
+### The AABB Inflation Problem
+
+`cv2.boundingRect(contour)` returns an **Axis-Aligned Bounding Box (AABB)** that includes empty space for irregular shapes. Using `area_px` (contourArea) as the depth area gives the **true** ratio and avoids rejecting valid matches.
+
+---
+
+## Adaptive Matching Threshold
+
+The overlap threshold adapts to lighting conditions:
+
+| Condition | Threshold | Why |
+|---|---|---|
+| Normal (is_dark=False, rgb_confidence ≥ 0.5) | 0.5 (50%) | Strict matching when YOLO is reliable |
+| Dark or low confidence | 0.3 (30%) | Relaxed matching when YOLO may be inaccurate |
 
 ---
 
 ## Priority Matrix
 
-After matching a YOLO class to a depth blob, assign priority:
+### PASS 1 (YOLO detections with depth)
 
 | Class | Distance | Priority | Action |
 |---|---|---|---|
-| person | < 1.0m | 0 | STOP |
-| person | < 3.0m | 2 | None |
-| other | < 1.0m | 1 | None |
-| other | ≥ 1.0m | 3 | None |
+| person | < `danger_distance` | 0 | STOP |
+| other | < `danger_distance` | 1 | None |
+| person | < `warning_distance` | 2 | None |
+| other | ≥ `danger_distance` | 3 | None |
 
-Thresholds come from `DetectionConfig.danger_distance` (configurable at runtime via GUI).
+### PASS 2 (depth-only obstacles)
 
----
+| Distance | Priority | Why |
+|---|---|---|
+| < 0.5m | 1 | Very close — demoted from 0 to avoid false STOP on generic obstacles |
+| < 1.0m | 2 | Close — warning level |
+| ≥ 1.0m | 3 | Normal |
 
-## Known Bugs & Issues (All Fixed)
-
-### Bug 1 — Critical: FusionStage Never Added to Pipeline ✅
-
-**File:** `main_window.py:82-89`
-**Problem:** `main_window.py` adds `YOLODetectionStage` but never adds `FusionStage`. The pipeline runs Depth → YOLO → END. `FusionStage.process()` is never called.
-**Impact:** `result.fused_output` is always `[]`. The system works only because `camera_thread.py` falls back to `result.obstacles`.
-**Fix:** Add `self.frame_processor.add_stage(FusionStage(config=config))` after YOLO stage.
-
-### Bug 2 — High: Output Bbox Format Mismatch ✅
-
-**File:** `frame_processor.py:409`
-**Problem:** Output bbox is `[x, y, w, h]` (OpenCV format) but the contract (`ROLES.md:150`, `FrameData` docstring) specifies `[x1, y1, x2, y2]`.
-**Impact:** Downstream consumers (RadarView, future GUI) expect xyxy but get xywh. Coordinates will be wrong.
-**Fix:** Convert `[x, y, w, h]` → `[x, y, x+w, y+h]` before appending.
-
-### Bug 3 — High: Priority Thresholds Hardcoded ✅
-
-**File:** `frame_processor.py:391-402`
-**Problem:** Distance thresholds `1.0m` and `3.0m` are hardcoded. `DetectionConfig.danger_distance` (default `1.5m`, adjustable via GUI) is ignored.
-**Impact:** GUI slider changes don't affect fusion priority. User sets danger to 2.0m but fusion still uses 1.0m.
-**Fix:** Accept `DetectionConfig` in constructor, use its values.
-
-### Bug 4 — High: Zone Not Passed to AlertPanel ✅
-
-**File:** `camera_thread.py:193-195`
-**Problem:** `distance_info_ready.emit(label, dist)` sends only 2 args. `alert_panel.py:143` expects 3: `(object_name, distance_m, zone)`. Zone defaults to `CENTER` always.
-**Impact:** AlertPanel always shows "ZONE: CENTER" regardless of actual object position.
-**Fix:** Emit zone as 3rd argument: `emit(label, dist, zone)`.
-
-### Bug 5 — Medium: `result` Variable Fragile Scope ✅
-
-**File:** `camera_thread.py:213-214`
-**Problem:** `result` is referenced inside `if self._processor is not None` but never initialized outside. If processor exists but `process()` throws (caught by `_measure()`), `result` may be incomplete.
-**Impact:** Potential `UnboundLocalError` or stale data.
-**Fix:** Initialize `result = None` before the `if` block, add null check.
-
-### Bug 6 — Medium: Radar `angle_deg` Never Computed ✅
-
-**File:** `radar_view.py:160`
-**Problem:** `obs.get("angle_deg", 90)` — neither ObstacleDetector nor FusionStage computes `angle_deg`. All blips default to 90° (center).
-**Impact:** Radar shows all objects in the center regardless of actual zone.
-**Fix:** Derive from zone: `left` → 45°, `center` → 90°, `right` → 135°.
-
-### Bug 7 — Low: Stale "PLACEHOLDER" Comment ✅
-
-**File:** `frame_processor.py:317`
-**Problem:** Docstring says `PLACEHOLDER — akan diimplementasikan oleh Role 4` but the stage is now implemented.
-**Impact:** Misleading to other developers.
-**Fix:** Update docstring to reflect actual behavior.
-
-### Bug 8 — Low: No Tests for FusionStage ✅
-
-**File:** `tests/test_frame_processor.py`
-**Problem:** FusionStage has zero test coverage. Imported but never tested.
-**Impact:** Regressions can slip in silently.
-**Fix:** Add tests for matching, priority, empty inputs, bbox format.
+Thresholds come from `DetectionConfig` (configurable at runtime via GUI sliders):
+- `danger_distance` (default: 1.5m)
+- `warning_distance` (default: 3.0m)
 
 ---
 
-## Fix Checklist
+## Output Format
 
-| # | Severity | File | Fix | Status |
-|---|---|---|---|---|
-| 1 | Critical | `main_window.py` | Add FusionStage to pipeline | ✅ Done |
-| 2 | High | `frame_processor.py` | Fix output bbox to xyxy | ✅ Done |
-| 3 | High | `frame_processor.py` | Use config thresholds for priority | ✅ Done |
-| 4 | High | `camera_thread.py` | Pass zone to distance_info_ready | ✅ Done |
-| 5 | Medium | `camera_thread.py` | Initialize result before if block | ✅ Done |
-| 6 | Medium | `radar_view.py` | Compute angle_deg from zone | ✅ Done |
-| 7 | Low | `frame_processor.py` | Remove stale placeholder comment | ✅ Done |
-| 8 | Low | `test_frame_processor.py` | Add FusionStage tests | ✅ Done |
+```python
+[
+    {
+        "object_class":  str,      # "person", "chair", "obstacle"
+        "distance_m":    float,    # meters
+        "zone":          str,      # "left" | "center" | "right"
+        "priority":      int,      # 0 = most dangerous
+        "bbox":          [x1, y1, x2, y2],  # xyxy format
+        "action":        str | None,         # "STOP" or None
+    },
+    ...
+]
+```
+
+---
+
+## Test Coverage
+
+FusionStage is covered by 30+ tests in `tests/test_frame_processor.py`:
+
+- Matching: YOLO + depth, no match, multiple detections
+- Priority: person close (0/STOP), obstacle close (1), warning (2), far (3)
+- PASS 2 ladder: <0.5m (1), <1.0m (2), ≥1.0m (3)
+- Dark mode: PASS 1 skipped, PASS 2 active
+- Overlap: identical boxes (1.0), no overlap (0.0), with area_px
+- Depth sampling: clamped bbox, all-invalid, tiny bbox
+- Zone: left, center, right
+- Config: thresholds from DetectionConfig (not hardcoded)
+- Contract: all required keys present

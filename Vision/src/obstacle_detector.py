@@ -60,13 +60,12 @@ class ObstacleDetector:
         warning_threshold=3.0,
     ):
         """
-        Mengembalikan frame yang sudah dianotasi dan daftar obstacle (list of dict)
+        Mengembalikan frame asli dan daftar obstacle (list of dict)
         sesuai kontrak dengan Role 4 (Sensor Fusion).
         """
         if color_frame is None or depth_frame is None:
             return color_frame, []
 
-        annotated_frame = color_frame.copy()
         height, width = depth_frame.shape[:2]
 
         # Reuse buffer for float32 conversion (avoids ~1.2MB allocation per frame)
@@ -74,19 +73,6 @@ class ObstacleDetector:
             self._depth_buffer = np.empty_like(depth_frame, dtype=np.float32)
         np.multiply(depth_frame, depth_scale, out=self._depth_buffer, casting="unsafe")
         depth_meter = self._depth_buffer
-
-        # Pembagian 3 Zona (HUD Ticks instead of full lines)
-        zone_width = width // 3
-        tick_len = 25
-        tick_color = (200, 200, 200)
-        
-        # Kiri boundary
-        cv2.line(annotated_frame, (zone_width, 0), (zone_width, tick_len), tick_color, 2)
-        cv2.line(annotated_frame, (zone_width, height - tick_len), (zone_width, height), tick_color, 2)
-        
-        # Kanan boundary
-        cv2.line(annotated_frame, (zone_width * 2, 0), (zone_width * 2, tick_len), tick_color, 2)
-        cv2.line(annotated_frame, (zone_width * 2, height - tick_len), (zone_width * 2, height), tick_color, 2)
 
         # Mask area yang dianggap obstacle dalam rentang jarak
         obstacle_mask = (
@@ -104,20 +90,19 @@ class ObstacleDetector:
         )
 
         obstacles_list = []
-        global_status = "SAFE"
         frame_area = height * width
         max_area = frame_area * self.max_area_ratio
+        zone_width = width // 3
 
         for contour in contours:
             area = cv2.contourArea(contour)
             if area < self.min_area:
                 continue
             if area > max_area:
-                continue  # Skip scene-wide contours (bukan obstacle diskret)
+                continue
 
             x, y, w, h = cv2.boundingRect(contour)
 
-            # Tentukan zone berdasarkan posisi tengah objek
             center_x = x + (w // 2)
             if center_x < zone_width:
                 zone_str = "left"
@@ -133,13 +118,10 @@ class ObstacleDetector:
             ]
 
             if valid_depth.size > 0:
-                # Menggunakan 5th percentile agar lebih stabil
                 distance = float(np.percentile(valid_depth, 5))
 
-                # Hitung prioritas
                 priority = round(1 / max(distance, 0.01), 2)
 
-                # Format data SESUAI KONTRAK dengan FrameData
                 obstacles_list.append(
                     {
                         "object_class": "obstacle",
@@ -151,7 +133,6 @@ class ObstacleDetector:
                     }
                 )
 
-        # Thread-safe assignment
         with self._detections_lock:
             self._last_detections = obstacles_list
 

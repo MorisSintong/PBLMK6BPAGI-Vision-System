@@ -5,43 +5,61 @@ Dokumentasi ini menjelaskan komponen pada folder `Vision/` untuk akuisisi frame 
 ## Tujuan Modul
 
 Modul Vision bertanggung jawab untuk:
-- mengambil frame dari kamera (RealSense / webcam),
-- menghasilkan data RGB dan Depth untuk GUI,
-- menyediakan fondasi pemrosesan objek/obstacle.
+- Mengambil frame dari kamera (RealSense / webcam)
+- Menghasilkan data RGB dan Depth (filtered + unfiltered) untuk GUI dan model
+- Menjalankan pipeline vision 4-stage: Depth → YOLO → Fusion → Annotation
+- Mendeteksi obstacle dan objek dengan sensor fusion
 
 ## Struktur Folder
 
 - `src/` — logic akuisisi kamera dan pemrosesan
 - `inc/` — konfigurasi parameter vision
+- `models/` — model weights (`.gitignore`)
 
 ## Komponen Utama (`src`)
 
 | File | Fungsi |
 |---|---|
-| `camera_thread.py` | Worker thread utama untuk capture kamera. Memiliki Delta Sleep optimizer untuk performa maksimal. Mengirim frame yang *memory-safe* ke GUI via sinyal Qt. |
-| `frame_processor.py` | Engine utama pipeline vision. Mengimplementasi *Chain of Responsibility* (YOLO, Depth, Fusion) yang berjalan pada setiap frame dengan pelacakan error robust. |
-| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference object detection. Output `Detection` dataclass. |
-| `obstacle_detector.py` | Modul yang mengekstrak informasi jarak dan prioritas menggunakan HUD visual overlay premium. |
-| `recorder.py` | Utilitas uji/rekam stream RealSense secara mandiri. Memiliki flag *mutex* agar tidak crash dengan pipeline utama. |
-| `fusion.md` | Dokumentasi lengkap FusionStage: metrik overlap, bug tracking, dan fix checklist. |
+| `camera_thread.py` | Worker thread untuk capture kamera. Separate acquisition thread + queue(maxsize=2). Unfiltered depth capture sebelum RS filters. Mengirim frame memory-safe ke GUI via sinyal Qt. |
+| `frame_processor.py` | Engine utama pipeline vision (4 stage). Chain of Responsibility dengan error handling robust. LUT-based depth colormap. Dual-model YOLO swap + CLAHE. Fusion two-pass architecture. |
+| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference. FP16 auto-detected, GPU warm-up, input_size=320, batch tensor transfer. Output `Detection` dataclass. |
+| `obstacle_detector.py` | Mengekstrak informasi jarak dan prioritas dari depth frame. Tidak mengcopy/memodifikasi color frame. Reusable float32 buffer. Thread-safe `last_detections`. |
+| `recorder.py` | Utilitas uji/rekam stream RealSense secara mandiri. Memiliki flag mutex agar tidak crash dengan pipeline utama. |
+| `fusion.md` | Dokumentasi FusionStage: two-pass architecture, overlap metric, priority matrix. |
 
 ## Konfigurasi (`inc`)
 
 | File | Fungsi |
 |---|---|
-| `detection_config.py` | Parameter threshold deteksi (min/max/danger distance). |
-| `camera_config.py` | Placeholder konfigurasi kamera tambahan. |
+| `detection_config.py` | Parameter threshold deteksi (min/max/danger/warning distance). |
+| `camera_config.py` | Konfigurasi kamera RealSense D455 + webcam fallback. Depth filter parameters (spatial, temporal, decimation). |
+| `logging_config.py` | Centralized logging (console + file output). |
+
+## Model Weights (`models`)
+
+| File | Fungsi |
+|---|---|
+| `ModelRGB_V4.2.pt` | RGB YOLO model (R2 latest, segmentation, 98.37% mAP) |
+| `ModelDepth_V4.pt` | Depth YOLO model (R2 latest, trained on unfiltered depth colormap) |
+| `security_best.pt` | Fallback model |
+
+Models di `.gitignore` — tidak di-track di git. Tim harus download manual.
 
 ## Alur Singkat Kamera Saat Ini
 
 1. `CameraThread.start_capture()` dipanggil dari GUI.
-2. Thread mengambil frame dari hardware (RealSense atau OpenCV fallback).
-3. Frame diproses oleh `FrameProcessor` melalui rangkaian *PipelineStage* (mis: Deteksi YOLO, Ekstraksi Depth).
-4. Hasil komputasi dan draw layer dikemas dalam objek `FrameData`.
-5. Frame hasil dikonversi ke format `QImage` (menggunakan byte copying untuk thread safety) dan dipancarkan ke GUI.
-6. `CameraThread` melakukan Delta Sleep untuk mempertahankan stabil 30 FPS tanpa menyebabkan lonjakan CPU usage.
+2. **Acquisition thread** mengambil frame dari hardware (RealSense atau OpenCV fallback).
+3. Unfiltered depth disimpan sebelum RS filters (untuk depth model).
+4. RS filters diterapkan (spatial, temporal, hole-filling).
+5. Frame masuk antrian `queue(maxsize=2)` untuk processing loop.
+6. **Processing loop** menarik frame dari queue, menjalankan `FrameProcessor.process()`.
+7. Pipeline 4-stage: DepthProcessing → YOLODetection → Fusion → VisualAnnotation.
+8. Hasil dikonversi ke `QImage` (numpy swap + `.tobytes()` untuk thread safety) dan dipancarkan ke GUI.
 
 ## Catatan Pengembangan
 
-- Untuk fitur D455 lanjutan (filter depth, point cloud, calibration), gunakan API `pyrealsense2` di layer ini.
-- `obstacle_detector.py` sudah berisi dasar deteksi, tetapi integrasinya ke alur GUI real-time masih bisa dikembangkan lebih lanjut.
+- Pipeline 4-stage: DepthProcessingStage (LUT colormap), YOLODetectionStage (dual-model + CLAHE), FusionStage (two-pass), VisualAnnotationStage (HUD).
+- Dual-model: RGB model untuk kondisi terang, depth model untuk kondisi gelap (lazy-loaded).
+- FP16 inference aktif saat CUDA tersedia (~2x faster on Tensor Cores).
+- LUT depth colormap ~3x lebih cepat dari mask approach.
+- ObstacleDetector tidak mengcopy color frame (performance optimization).

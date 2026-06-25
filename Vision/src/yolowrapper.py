@@ -36,16 +36,26 @@ class Detection:
 
 
 class YOLOWrapper:
-    def __init__(self, model_path: str, conf_threshold: float = 0.25, input_size: int = 416):
+    def __init__(self, model_path: str, conf_threshold: float = 0.25, input_size: int = 320):
         self.conf_threshold = conf_threshold
         self.input_size = input_size
 
         self._device = "0" if torch.cuda.is_available() else "cpu"
+        self._fp16 = torch.cuda.is_available()
 
-        logger.info(f"Loading YOLO model from: {model_path} (device: {self._device})")
+        logger.info(f"Loading YOLO model from: {model_path} (device: {self._device}, fp16: {self._fp16})")
         self.model = YOLO(model_path)
         self.class_mapping = self.model.names
-        logger.info(f"YOLO model loaded. Classes: {len(self.class_mapping)} | GPU: {torch.cuda.is_available()}")
+
+        # Warm-up: run one dummy inference to pre-compile CUDA kernels
+        if torch.cuda.is_available():
+            logger.info("Warming up GPU (first inference is slow)...")
+            dummy = np.zeros((self.input_size, self.input_size, 3), dtype=np.uint8)
+            self.model.predict(source=dummy, imgsz=self.input_size, verbose=False)
+            torch.cuda.synchronize()
+            logger.info("GPU warm-up complete.")
+
+        logger.info(f"YOLO model ready. Classes: {len(self.class_mapping)} | GPU: {torch.cuda.is_available()}")
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         if frame is None:
@@ -56,21 +66,26 @@ class YOLOWrapper:
             imgsz=self.input_size,
             conf=self.conf_threshold,
             device=self._device,
+            half=self._fp16,
             verbose=False,
         )
 
-        detections = []
-        for box in results[0].boxes:
-            xyxy = box.xyxy[0].cpu().numpy().astype(int).tolist()
-            conf = float(box.conf[0].cpu().numpy())
-            class_id = int(box.cls[0].cpu().numpy())
-            class_name = self.class_mapping.get(class_id, f"unknown-{class_id}")
+        boxes = results[0].boxes
+        if boxes is None or len(boxes) == 0:
+            return []
 
+        # Batch tensor transfer: move all at once instead of per-box
+        xyxy_all = boxes.xyxy.cpu().numpy().astype(int)
+        conf_all = boxes.conf.cpu().numpy()
+        cls_all = boxes.cls.cpu().numpy().astype(int)
+
+        detections = []
+        for i in range(len(boxes)):
             detections.append(Detection(
-                class_id=class_id,
-                class_name=class_name,
-                confidence=conf,
-                bbox=xyxy,
+                class_id=int(cls_all[i]),
+                class_name=self.class_mapping.get(int(cls_all[i]), f"unknown-{cls_all[i]}"),
+                confidence=float(conf_all[i]),
+                bbox=xyxy_all[i].tolist(),
             ))
 
         return detections
@@ -87,25 +102,27 @@ if __name__ == "__main__":
         print("Download 'security_best.pt' to Vision/models/")
     else:
         try:
-            wrapper = YOLOWrapper(model_path=MODEL_PATH, conf_threshold=0.25, input_size=416)
+            wrapper = YOLOWrapper(model_path=MODEL_PATH, conf_threshold=0.25, input_size=320)
             dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
             print("\n[TEST 1] Warm-up inference...")
             wrapper.detect(dummy_frame)
 
-            print("\n[TEST 2] Latency benchmark (10 iterations)...")
+            print("\n[TEST 2] Latency benchmark (20 iterations)...")
             total_latency = 0
-            for i in range(10):
+            for i in range(20):
                 start = time.time()
                 detections = wrapper.detect(dummy_frame)
                 latency = (time.time() - start) * 1000
                 total_latency += latency
                 print(f"   Loop {i+1}: {latency:.2f} ms | detections: {len(detections)}")
 
-            avg = total_latency / 10
+            avg = total_latency / 20
             print(f"\n[RESULT] Average latency: {avg:.2f} ms")
-            if avg <= 50:
-                print("STATUS: PASS (GPU target <= 50ms)")
+            if avg <= 30:
+                print("STATUS: EXCELLENT (target <= 30ms)")
+            elif avg <= 50:
+                print("STATUS: PASS (target <= 50ms)")
             elif avg <= 100:
                 print("STATUS: OK (CPU target <= 100ms)")
             else:

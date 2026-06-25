@@ -8,25 +8,28 @@
 **Orang:** Moris
 
 ### Tanggung jawab
-- Merancang dan mengimplementasikan pipeline vision end-to-end
+- Merancang dan mengimplementasikan pipeline vision end-to-end (4 stages)
 - Mendefinisikan kontrak data antar stage
-- Mengorkestrasi aliran data: Raw Frame → Depth → Obstacle → YOLO → Fusion → Output
+- Mengorkestrasi aliran data: Raw Frame → Depth → YOLO → Fusion → Annotation → Output
 - Code review untuk semua PR dari Role 2-6
+- Performance optimization (FP16, LUT, lazy loading, buffer reuse)
 
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/frame_processor.py` | Pipeline utama |
-| `Vision/src/camera_thread.py` | Integrasi pipeline |
+| `Vision/src/frame_processor.py` | Pipeline utama (4 stage: Depth, YOLO, Fusion, Annotation) |
+| `Vision/src/camera_thread.py` | Integrasi pipeline + acquisition thread |
+| `Vision/src/yolowrapper.py` | YOLOv8 wrapper (FP16, warm-up, batch transfer) |
 | `Vision/inc/detection_config.py` | Konfigurasi terpusat |
-| `Vision/inc/camera_config.py` | Konfigurasi kamera |
+| `Vision/inc/camera_config.py` | Konfigurasi kamera (RealSense + webcam) |
 | `main.py` | Inisialisasi FrameProcessor |
 
 ### Selesai bila
-- `frame_processor.py` menerima frame dari CameraThread, menjalankan semua stage, mengembalikan frame teranotasi
+- `frame_processor.py` menerima frame dari CameraThread, menjalankan semua 4 stage, mengembalikan frame teranotasi
 - Pipeline ≥25 FPS (RealSense) / ≥30 FPS (webcam)
 - Semua kontrak antar stage didokumentasikan dan disetujui tim
 - Semua file konfigurasi dikelola sebagai single source of truth
+- 123/123 tests pass
 
 ---
 
@@ -35,40 +38,40 @@
 
 ### Tanggung jawab
 - Membangun `YOLOWrapper` class untuk model loading, inference, class mapping
-- Fine-tuning YOLOv8-nano dengan dataset dari Role 5
+- Fine-tuning YOLOv8 dengan dataset dari Role 5
 - Optimasi inference (ONNX, TensorRT, reduced input size)
-- Output per frame: `List[Dict]` dengan format `{bbox, class_id, class_name, confidence}`
+- Output per frame: `List[Detection]` (dataclass) dengan format `{bbox, class_id, class_name, confidence}`
 
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/yolo_wrapper.py` | File baru — YOLO wrapper |
-| `environment.yml` | Dependency ultralytics |
+| `Vision/src/yolowrapper.py` | YOLO wrapper (FP16, warm-up, 320px, batch transfer) |
+| `Vision/models/ModelRGB_V4.2.pt` | RGB model (latest) |
+| `Vision/models/ModelDepth_V4.pt` | Depth model (latest, trained on unfiltered depth) |
+| `environment.yml` | Dependency ultralytics 8.4.77 |
 
 ### Input dari
 - **Role 5** — dataset train/val berlabel
 
 ### Output ke
-- **Role 4** — `FrameData.detections` (List[Dict])
+- **Role 4** — `FrameData.detections` (List[Detection] dataclass)
 
 ### Format kontrak output
 ```python
-[
-    {
-        "bbox":        [x1, y1, x2, y2],  # format xyxy, int
-        "class_id":    int,                # indeks kelas COCO
-        "class_name":  str,                # "person", "chair", dll.
-        "confidence":  float,              # 0.0 - 1.0
-    },
-    ...
-]
+@dataclass
+class Detection:
+    class_id: int        # COCO class index
+    class_name: str      # "person", "mobil", "motor"
+    confidence: float    # 0.0 - 1.0
+    bbox: List[int]      # [x1, y1, x2, y2] xyxy format
 ```
 
 ### Selesai bila
 - Model YOLOv8 berjalan inference pada setiap frame RGB pipeline
+- Dual-model: RGB model + Depth model untuk dark mode
 - Latency ≤50ms (GPU) / ≤100ms (CPU)
 - Akurasi ≥70% mAP@0.5 pada kelas target di lingkungan outdoor
-- Stabil pada pencahayaan bervariasi (penurunan akurasi ≤15%)
+- Stabil pada pencahaayan bervariasi (penurunan akurasi ≤15%)
 - API bersih dan terdokumentasi
 
 ---
@@ -79,13 +82,16 @@
 ### Tanggung jawab
 - Depth filtering: temporal, spatial edge-preserving, hole-filling, decimation (pakai pyrealsense2 SDK)
 - Multi-zone detection: LEFT / CENTER / RIGHT
-- Depth colormap: merah (danger), kuning (warning), hijau (safe)
+- Depth colormap: merah (danger), kuning (warning), hijau (safe) — sekarang LUT-based
+- Unfiltered depth capture sebelum filters (untuk depth model)
 - Obstacle detection dengan bounding box + distance label
 
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/camera_thread.py` | Depth filtering & colormap di pipeline |
+| `Vision/src/camera_thread.py` | Depth filtering, unfiltered capture, acquisition thread |
+| `Vision/src/obstacle_detector.py` | Obstacle detection (no frame copy, buffer reuse) |
+| `Vision/inc/camera_config.py` | RealSense D455 settings + filter parameters |
 
 ### Output ke
 - **Role 4** — `FrameData.obstacles` (List[Dict])
@@ -95,10 +101,11 @@
 ```python
 [
     {
-        "bbox":        [x, y, w, h],  # bounding box
+        "bbox":        [x, y, w, h],  # bounding box (xywh)
         "distance_m":  float,          # jarak dalam meter
         "zone":        "left"|"center"|"right",
-        "area_px":     int,            # luas kontur
+        "area_px":     int,            # cv2.contourArea
+        "priority":    float,          # inverse distance (raw)
     },
     ...
 ]
@@ -107,9 +114,9 @@
 ### Selesai bila
 - ObstacleDetector berjalan real-time, akurat untuk objek 0.3m–5m
 - Depth noise berkurang 30% (indoor) / 20% (outdoor) dari raw
-- Colormap menampilkan zona merah/kuning/hijau sesuai threshold
+- Colormap menampilkan zona merah/kuning/hijau sesuai threshold (LUT-based)
 - 3 sektor (left/center/right) dengan jarak minimum per sektor
-- Bounding box + label distance di frame RGB
+- Unfiltered depth frame tersedia untuk depth model
 
 ### Catatan outdoor
 RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau area teduh.
@@ -121,17 +128,15 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 
 ### Tanggung jawab
 - Menggabungkan YOLO detections (R2) + depth obstacles (R3)
-- Proyeksi 2D bbox ke 3D (intrinsik kamera)
+- Two-pass architecture: PASS 1 YOLO-first direct depth sampling, PASS 2 depth-only obstacles
 - Prioritas obstacle: person dekat > obstacle dekat > lainnya
-- Ground-plane estimation (indoor + outdoor terrain)
+- Adaptive overlap threshold (0.3 dark, 0.5 normal)
 
 ### File
 | File | Keterangan |
 |---|---|
 | `Vision/src/frame_processor.py` | FusionStage implementation |
-| `Vision/src/obstacle_detector.py` | Depth obstacle detection (consumed by FusionStage) |
-| `Vision/src/fusion.md` | FusionStage documentation & bug tracking |
-| YOLO wrapper (dari R2) | Konsumsi |
+| `Vision/src/fusion.md` | FusionStage documentation |
 
 ### Input dari
 - **Role 2** — `FrameData.detections` (List[Detection])
@@ -144,7 +149,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ```python
 [
     {
-        "object_class":  str,                # "person", "chair", dll.
+        "object_class":  str,                # "person", "chair", "obstacle"
         "distance_m":    float,
         "zone":          "left"|"center"|"right",
         "priority":      int,                # 0 = paling bahaya
@@ -156,24 +161,27 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ```
 
 ### Aturan prioritas
-| Kondisi | Priority |
-|---|---|
-| Person < danger_distance | 0 (STOP) |
-| Obstacle < danger_distance | 1 |
-| Person < 3m | 2 |
-| Lainnya | 3+ |
-| Tidak ada obstacle | list kosong `[]` |
+| Pass | Class | Distance | Priority |
+|---|---|---|---|
+| PASS 1 | person | < danger_distance | 0 (STOP) |
+| PASS 1 | other | < danger_distance | 1 |
+| PASS 1 | person | < warning_distance | 2 |
+| PASS 1 | other | ≥ danger_distance | 3 |
+| PASS 2 | obstacle | < 0.5m | 1 |
+| PASS 2 | obstacle | < 1.0m | 2 |
+| PASS 2 | obstacle | ≥ 1.0m | 3 |
 
 ### Implementasi
-- **Overlap metric**: `intersection / depth_area_px` (bukan IoU — lihat `fusion.md` untuk penjelasan)
-- **Matching threshold**: 50% dari depth blob harus tertutupi YOLO box
-- **Config**: `DetectionConfig.danger_distance` digunakan untuk priority thresholds (bukan hardcoded)
+- **PASS 1**: Direct depth sampling dari YOLO bbox (center 60%, 25th percentile)
+- **PASS 2**: Overlap metric `intersection / min(depth_area, yolo_area)` untuk cek covered
+- **Adaptive threshold**: 0.3 saat dark/low confidence, 0.5 normal
+- **Config**: `DetectionConfig.danger_distance` dan `warning_distance` (bukan hardcoded)
 
 ### Selesai bila
-- Setiap deteksi YOLO punya jarak akurat (±10% untuk 0.5–4m)
-- Prioritas diurutkan benar
-- Ground-plane estimation kurangi false positive ≥30% (indoor) / ≥20% (outdoor)
-- Output terstruktur siap dikonsumsi Role 6
+- ✅ Setiap deteksi YOLO punya jarak akurat via direct depth sampling
+- ✅ Prioritas diurutkan benar
+- ✅ Output terstruktur siap dikonsumsi Role 6
+- ✅ 69 tests covering fusion logic
 
 ---
 
@@ -191,7 +199,8 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/recorder.py` | Rekam stream |
+| `data-collection.md` | Panduan akuisisi dataset |
+| `Doc/model_evaluation_report_v4.md` | Laporan evaluasi model V4.2 + V4 |
 | Test scripts | Benchmark harness |
 
 ### Output ke
@@ -212,34 +221,34 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 
 ### Tanggung jawab
 - Memperbarui AlertPanel: nama objek, jarak, zona, status bahaya, rekomendasi aksi
-- Integrasi RadarView (180°, data nyata dari pipeline)
+- Integrasi RadarView (180°, data nyata dari pipeline, cached background)
 - DepthView overlay: bounding box + label kelas + jarak
 - Wiring sinyal dari FrameProcessor ke GUI
 - Maintain stabilitas seluruh widget GUI
+- Performance optimization (cached pixmaps, change-only stylesheets)
 
 ### File
 | File | Keterangan |
 |---|---|
-| `GUI/src/Alert_panel.py` | Panel info + alert |
-| `GUI/src/main_window.py` | Wiring sinyal |
-| `GUI/src/depth_view.py` | Display kamera |
-| `GUI/src/controls_panel.py` | Panel kontrol |
-| `GUI/src/radar_view.py` | Radar 180° |
+| `GUI/src/main_window.py` | Wiring sinyal + pipeline assembly |
+| `GUI/src/depth_view.py` | Display kamera (3 mode, visible-only updates) |
+| `GUI/src/controls_panel.py` | Panel kontrol + threshold sliders |
+| `GUI/src/alert_panel.py` | Panel info + alert (cached stylesheets) |
+| `GUI/src/radar_view.py` | Radar 180° (cached background pixmap) |
 | `GUI/inc/ui_config.py` | Konstanta UI |
-| `GUI/inc/styles.py` | Stylesheet |
+| `GUI/inc/styles.py` | Stylesheet + color constants |
 | `main.py` | Qt bootstrap |
 
 ### Input dari
 - **Role 4** — `FrameData.fused_output`
 
 ### Selesai bila
-- AlertPanel format: `PERSON | 2.3 m | CENTER | STOP`
-- RadarView menampilkan posisi obstacle real-time (bukan dummy)
-- DepthView anotasi: bbox + label + jarak
-- Informasi deteksi tampil ≤50ms setelah frame diproses
-- Operator bisa ambil keputusan hanya dengan melihat GUI
-- Semua widget berfungsi tanpa bug
-- Sistem stabil ≥30 menit streaming kontinu
+- ✅ AlertPanel format: `PERSON | 2.3 m | CENTER | STOP`
+- ✅ RadarView menampilkan posisi obstacle real-time (cached background)
+- ✅ DepthView anotasi: bbox + label + jarak (visible-only updates)
+- ✅ Informasi deteksi tampil ≤50ms setelah frame diproses
+- ✅ Operator bisa ambil keputusan hanya dengan melihat GUI
+- ✅ Semua widget berfungsi tanpa bug
 
 ---
 
@@ -257,12 +266,13 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 | R5 | R2 | Dataset train/val |
 | R5 | Semua | Laporan benchmark |
 
-### Parallel vs Sequential
+### Status Parallel vs Sequential
 
 | Role | Status |
 |---|---|
-| R1 | Sepanjang fase (review + maintain) |
-| R2 + R3 | **Paralel** — tidak saling bergantung |
-| R4 | **Nunggu** R2 + R3 selesai |
-| R5 | Sepanjang fase (dataset + testing) |
-| R6 | **Nunggu** R4 selesai |
+| R1 | ✅ Selesai (97% — hardware test pending) |
+| R2 | ⏳ Menunggu R5 (dataset) |
+| R3 | ⏳ Outdoor test pending |
+| R4 | ✅ Selesai (100%) |
+| R5 | ⏳ Dataset + benchmark pending |
+| R6 | ✅ Selesai (100%) |

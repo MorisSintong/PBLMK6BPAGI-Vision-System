@@ -21,7 +21,6 @@ from GUI.inc.styles import (
 )
 
 
-# ── Logika Rekomendasi Aksi ───────────────────────────────────────────────────
 def get_action(zone: str, distance_m: float) -> str:
     if distance_m is None:
         return "--"
@@ -40,7 +39,6 @@ def get_action(zone: str, distance_m: float) -> str:
         return ACTION_GO
 
 
-# ── Style jarak dengan warna dinamis ─────────────────────────────────────────
 def _distance_style(color: str) -> str:
     return (
         f"color: {color}; background: transparent; "
@@ -48,24 +46,56 @@ def _distance_style(color: str) -> str:
     )
 
 
+# Pre-computed style strings (avoid f-string allocation per frame)
+_STYLE_DANGER = {
+    "infobox": INFOBOX_DANGER,
+    "status": STATUS_DANGER,
+    "distance": _distance_style("#1e1e2e"),
+    "object": TEXT_DARK,
+    "zone": TEXT_DARK,
+    "action": TEXT_DARK,
+}
+_STYLE_WARNING = {
+    "infobox": INFOBOX_WARNING,
+    "status": STATUS_WARNING,
+    "distance": _distance_style("#1e1e2e"),
+    "object": TEXT_DARK,
+    "zone": TEXT_DARK,
+    "action": TEXT_DARK,
+}
+_STYLE_SAFE = {
+    "infobox": INFOBOX_SAFE,
+    "status": STATUS_SAFE,
+    "distance": _distance_style("#ffffff"),
+    "object": TEXT_LIGHT,
+    "zone": TEXT_BLUE,
+    "action": TEXT_GREEN,
+}
+_STYLE_WAITING = {
+    "infobox": INFOBOX_DEFAULT,
+    "status": STATUS_SAFE,
+    "distance": _distance_style("#ffffff"),
+    "object": TEXT_LIGHT,
+    "zone": TEXT_BLUE,
+    "action": TEXT_GREEN,
+}
+
+
 class AlertPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.threshold_warning = THRESHOLD_WARNING
         self.threshold_danger  = THRESHOLD_DANGER
+        self._prev_status = "init"
         self._build_ui()
         self._apply_style()
 
-    # ------------------------------------------------------------------ #
-    #  UI Builder                                                          #
-    # ------------------------------------------------------------------ #
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(6)
         layout.addStretch(1)
 
-        # ── Info Box ──────────────────────────────────────────────────
         self.info_box = QFrame()
         self.info_box.setObjectName("infoBox")
         self.info_box.setFixedHeight(200)
@@ -74,18 +104,15 @@ class AlertPanel(QWidget):
         box_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box_layout.setSpacing(6)
 
-        # ── Nama Objek ────────────────────────────────────────────────
         self.lbl_object_name = QLabel("MENUNGGU...")
         self.lbl_object_name.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         self.lbl_object_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_object_name.setStyleSheet(TEXT_LIGHT)
 
-        # ── Jarak ─────────────────────────────────────────────────────
         self.lbl_distance = QLabel("-- m")
         self.lbl_distance.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_distance.setStyleSheet(_distance_style("#ffffff"))
 
-        # ── Zona + Aksi ───────────────────────────────────────────────
         zone_action_row = QHBoxLayout()
         zone_action_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zone_action_row.setSpacing(8)
@@ -109,13 +136,11 @@ class AlertPanel(QWidget):
         zone_action_row.addWidget(separator)
         zone_action_row.addWidget(self.lbl_action)
 
-        # ── Status Bar ────────────────────────────────────────────────
         self.lbl_status = QLabel("SAFE")
         self.lbl_status.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_status.setStyleSheet(STATUS_SAFE)
 
-        # ── Susun semua ke box ────────────────────────────────────────
         box_layout.addWidget(self.lbl_object_name)
         box_layout.addWidget(self.lbl_distance)
         box_layout.addLayout(zone_action_row)
@@ -133,68 +158,48 @@ class AlertPanel(QWidget):
             }
         """)
 
-    # ------------------------------------------------------------------ #
-    #  Public API                                                          #
-    # ------------------------------------------------------------------ #
     def set_thresholds(self, warning_m: float, danger_m: float):
         self.threshold_warning = warning_m
         self.threshold_danger  = danger_m
 
+    def _apply_status_style(self, style: dict):
+        """Apply a full set of stylesheets. Only call when status changes."""
+        self.info_box.setStyleSheet(style["infobox"])
+        self.lbl_status.setStyleSheet(style["status"])
+        self.lbl_distance.setStyleSheet(style["distance"])
+        self.lbl_object_name.setStyleSheet(style["object"])
+        self.lbl_zone.setStyleSheet(style["zone"])
+        self.lbl_action.setStyleSheet(style["action"])
+
     def update_info(self, object_name: str, distance_m: float, zone: str = ZONE_CENTER):
-        """
-        Dipanggil oleh CameraThread / FrameProcessor setiap ada data baru.
-
-        Parameters:
-            object_name : nama objek, contoh 'Person', 'Vehicle'
-            distance_m  : jarak dalam meter
-            zone        : posisi objek — 'LEFT', 'CENTER', atau 'RIGHT'
-        """
-
-        # ── Reset jika tidak ada data ─────────────────────────────────
         if distance_m is None:
+            if self._prev_status != "waiting":
+                self._prev_status = "waiting"
+                self._apply_status_style(_STYLE_WAITING)
             self.lbl_object_name.setText("MENUNGGU...")
             self.lbl_distance.setText("-- m")
-            self.lbl_distance.setStyleSheet(_distance_style("#ffffff"))
             self.lbl_zone.setText("ZONE: --")
             self.lbl_action.setText("--")
             self.lbl_status.setText("SAFE")
-            self.lbl_status.setStyleSheet(STATUS_SAFE)
-            self.info_box.setStyleSheet(INFOBOX_DEFAULT)
-            self.lbl_object_name.setStyleSheet(TEXT_LIGHT)
-            self.lbl_zone.setStyleSheet(TEXT_BLUE)
-            self.lbl_action.setStyleSheet(TEXT_GREEN)
             return
 
-        # ── Update teks ───────────────────────────────────────────────
         self.lbl_object_name.setText(object_name.upper())
         self.lbl_distance.setText(f"{distance_m:.1f} m")
         self.lbl_zone.setText(f"ZONE: {zone.upper()}")
         self.lbl_action.setText(get_action(zone, distance_m))
 
-        # ── Tentukan status & warna ───────────────────────────────────
         if distance_m <= self.threshold_danger:
-            self.info_box.setStyleSheet(INFOBOX_DANGER)
+            if self._prev_status != "danger":
+                self._prev_status = "danger"
+                self._apply_status_style(_STYLE_DANGER)
             self.lbl_status.setText("DANGER")
-            self.lbl_status.setStyleSheet(STATUS_DANGER)
-            self.lbl_distance.setStyleSheet(_distance_style("#1e1e2e"))
-            self.lbl_object_name.setStyleSheet(TEXT_DARK)
-            self.lbl_zone.setStyleSheet(TEXT_DARK)
-            self.lbl_action.setStyleSheet(TEXT_DARK)
-
         elif distance_m <= self.threshold_warning:
-            self.info_box.setStyleSheet(INFOBOX_WARNING)
+            if self._prev_status != "warning":
+                self._prev_status = "warning"
+                self._apply_status_style(_STYLE_WARNING)
             self.lbl_status.setText("WARNING")
-            self.lbl_status.setStyleSheet(STATUS_WARNING)
-            self.lbl_distance.setStyleSheet(_distance_style("#1e1e2e"))
-            self.lbl_object_name.setStyleSheet(TEXT_DARK)
-            self.lbl_zone.setStyleSheet(TEXT_DARK)
-            self.lbl_action.setStyleSheet(TEXT_DARK)
-
         else:
-            self.info_box.setStyleSheet(INFOBOX_SAFE)
+            if self._prev_status != "safe":
+                self._prev_status = "safe"
+                self._apply_status_style(_STYLE_SAFE)
             self.lbl_status.setText("SAFE")
-            self.lbl_status.setStyleSheet(STATUS_SAFE)
-            self.lbl_distance.setStyleSheet(_distance_style("#ffffff"))
-            self.lbl_object_name.setStyleSheet(TEXT_LIGHT)
-            self.lbl_zone.setStyleSheet(TEXT_BLUE)
-            self.lbl_action.setStyleSheet(TEXT_GREEN)
