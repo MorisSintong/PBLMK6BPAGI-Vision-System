@@ -39,8 +39,9 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Team roles documentation | R1 | `Doc/texDoc/teamRoles/Roles.pdf` + `ROLES.md` |
 | Model evaluation report | R5 (Hamid) | `Doc/model_evaluation_report_v4.md` — V4.2 RGB (98.37% mAP) + V4 Depth (87.23% mAP) |
 | Dataset acquisition guide | R5 | `data-collection.md` — comprehensive guide for R5 |
-| Test suite | R1 | 125 tests: 71 frame_processor + 31 obstacle_detector + 24 camera_thread. All pass in ~8s |
-| Benchmark suite | R1/R5 | `tests/benchmark.py` — 16/16 software criteria PASS (42.5 FPS, P95 30.50ms) |
+| Test suite | R1 | 138 tests: 83 frame_processor + 31 obstacle_detector + 24 camera_thread. All pass in ~8s |
+| Benchmark suite | R1/R5 | `tests/benchmark.py` — 17/17 software criteria PASS (42.5 FPS, P95 30.50ms) |
+| NavigationStage (gap-based steering) | R1 | Polar histogram (18 sectors), gap finding + scoring, hysteresis, safety override, speed mapping |
 | Dataset acquisition (≥300 frames) | R5 (Hamid) | ✅ RGB: 2668 frames, Depth: 2471 frames |
 | Dataset classes (≥3) | R5 | ✅ mobil, motor, person |
 | mAP accuracy benchmark | R5 | ✅ RGB 98.37%, Depth 87.23% (>=70% target) |
@@ -95,7 +96,11 @@ main.py → MainWindow
                                 ├── FusionStage (overlap matching + priority matrix)
                                 │     ├── PASS 1: YOLO-first direct depth sampling
                                 │     └── PASS 2: depth-only obstacles
-                                └── VisualAnnotationStage (HUD rendering, in-place)
+                                ├── NavigationStage (gap-based steering, VFH-lite)
+                                │     ├── Polar histogram (18 sectors)
+                                │     ├── Gap finding + scoring + hysteresis
+                                │     └── Safety override (priority 0 → STOP)
+                                └── VisualAnnotationStage (HUD + steering arrow, in-place)
 ```
 
 ## Data Flow

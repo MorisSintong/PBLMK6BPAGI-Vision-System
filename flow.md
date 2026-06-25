@@ -12,12 +12,13 @@ When the program starts (`main.py`), it instantiates the GUI (`MainWindow`). The
 
 1. **GUI Setup:** `MainWindow` initializes the `DepthView` (for images), `ControlsPanel` (for buttons/sliders), `AlertPanel` (for text status), and `RadarView` (for spatial tracking).
 2. **Vision Setup:** The `MainWindow` instantiates the `FrameProcessor` (the brain of the vision system) and the `CameraThread` (a background PyQt `QThread` that talks to the hardware).
-3. **Pipeline Assembly:** `FrameProcessor` is configured with four stages in order:
+3. **Pipeline Assembly:** `FrameProcessor` is configured with five stages in order:
    - `DepthProcessingStage` — always present (R3)
    - `YOLODetectionStage` — dual-model swap with CLAHE (R2)
    - `FusionStage` — merges R2 + R3 output (R4)
+   - `NavigationStage` — gap-based steering via polar histogram (R1)
    - `VisualAnnotationStage` — HUD rendering (R1)
-4. **Signal Routing:** The GUI connects the thread's output signals (e.g., `frame_pair_ready`, `obstacles_ready`) to its own update functions.
+4. **Signal Routing:** The GUI connects the thread's output signals (e.g., `frame_pair_ready`, `obstacles_ready`, `navigation_ready`) to its own update functions.
 5. **GPU Warm-up:** If CUDA is available, `YOLOWrapper` runs a dummy inference at load time to pre-compile CUDA kernels. This prevents the first real frame from being slow.
 
 ---
@@ -350,14 +351,89 @@ Thresholds come from `DetectionConfig` (configurable at runtime via GUI sliders)
 }
 ```
 
-### 3.5 Stage D: `VisualAnnotationStage` (HUD Rendering)
+### 3.5 Stage D: `NavigationStage` (Path Planning)
+
+This stage computes a steering recommendation using a **polar histogram + gap-based** approach (VFH-lite). It answers: **"Which direction should the robot steer, and how fast?"**
+
+#### 3.5.1 Polar Histogram
+
+The depth frame is divided into N horizontal sectors (default: 18 sectors of ~5° each). For each sector, the 10th percentile distance is computed (robust to noise):
+
+```
+Sector 0 (leftmost)  → min_dist = 0.3m  (blocked)
+Sector 1             → min_dist = 0.4m  (blocked)
+...
+Sector 9 (center)    → min_dist = 4.5m  (free)
+...
+Sector 17 (rightmost)→ min_dist = 3.8m  (free)
+```
+
+#### 3.5.2 Blocked Sector Detection
+
+A sector is marked **blocked** if its minimum distance is less than the robot's required clearance:
+
+```
+min_gap = robot_width + 2 × safety_margin
+       = 0.5m + 2 × 0.3m = 1.1m
+
+blocked[i] = histogram[i] < min_gap
+```
+
+#### 3.5.3 Gap Finding
+
+Contiguous free sectors form **gaps**. Each gap is scored:
+
+```
+score = 0.5 × center_bias + 0.3 × width_score + 0.2 × clearance_score
+```
+
+- `center_bias` — prefer gaps near center (0°), penalize extreme angles
+- `width_score` — wider gaps are safer
+- `clearance_score` — deeper gaps allow faster travel
+
+The highest-scoring gap's center angle becomes the recommended steering angle.
+
+#### 3.5.4 Hysteresis (Anti-Oscillation)
+
+To prevent the steering from flipping left/right every frame, the stage sticks with the previous heading for N frames (default: 5) if it's still within a free gap.
+
+#### 3.5.5 Safety Override
+
+If FusionStage found a person at priority 0 (in danger zone), the navigation forces `STOPPED` regardless of available gaps. This ensures the robot never steers around a person it should be stopping for.
+
+#### 3.5.6 Speed Mapping
+
+Speed ramps linearly based on the minimum distance in the center sectors:
+
+```
+if min_dist < danger_distance:    speed = 0.0 (stop)
+if min_dist >= warning_distance:  speed = 1.0 (full)
+else:                             speed = (min_dist - danger) / (warning - danger)
+```
+
+#### 3.5.7 Output Format
+
+```python
+{
+    "steering_angle_deg": float,   # -45 (left) to +45 (right), 0 = straight
+    "speed": float,                # 0.0 (stop) to 1.0 (full)
+    "status": str,                 # "CLEAR" | "AVOIDING" | "BLOCKED" | "STOPPED"
+    "gaps": List[Dict],            # Navigable gaps with angle, width, distance
+    "histogram": List[float],      # Min distance per sector
+    "blocked_sectors": List[bool], # Blocked flag per sector
+}
+```
+
+### 3.6 Stage E: `VisualAnnotationStage` (HUD Rendering)
 
 The final stage draws HUD overlays onto the `rgb_frame` **in-place**:
 
 1. **Corner brackets** — 8 lines per object (not full rectangles, less visual clutter)
 2. **Dark text plate** with label: `[ZONE] distance_m` or `class_name [ZONE] distance_m`
-3. **Color coding**: Soft Red (danger, priority ≤ 1), Amber (warning, priority ≤ 2), Lime Green (safe)
+3. **Color coding**: Soft Red (danger, priority <= 1), Amber (warning, priority <= 2), Lime Green (safe)
 4. **Global status bar** (top-left): `SYS: SAFE` / `SYS: WARN` / `SYS: DANGER`
+5. **Navigation HUD** (bottom-left): `NAV: AVOIDING | STEER +22 deg | SPD 50%`
+6. **Steering arrow** (bottom-center): directional arrow showing recommended heading
 
 Data source priority:
 1. `fused_output` (from FusionStage) — bbox in xyxy format
@@ -384,11 +460,12 @@ qimage = QImage(frame_rgb.tobytes(), w, h, bytes_per_line, Format_RGB888)
 
 ### 4.2 Signal Emission
 
-The thread emits three signals:
+The thread emits four signals:
 
 1. **`frame_pair_ready(QImage, QImage)`** — RGB and depth images for display
 2. **`distance_info_ready(str, object, str)`** — label, distance, zone for alert panel
 3. **`obstacles_ready(list)`** — fused or raw obstacles for radar view
+4. **`navigation_ready(dict)`** — steering angle, speed, status, gaps for alert panel + radar
 
 All signals cross the thread boundary via Qt's **signal-slot mechanism**, which is thread-safe by design. The slot functions run in the main thread.
 
@@ -472,7 +549,8 @@ Camera grabs light (30 FPS)
     → Depth converts to LUT colormap + obstacle detection
     → YOLO identifies objects (dual-model swap: RGB/depth/CLAHE)
     → Fusion matches them (PASS 1: direct sampling, PASS 2: overlap)
-    → Visual annotation draws HUD (in-place)
+    → Navigation computes steering (polar histogram + gap selection)
+    → Visual annotation draws HUD + steering arrow (in-place)
   → Signals transmit data (thread-safe QImage + typed signals)
     → DepthView renders images (visible-only updates)
     → AlertPanel shows status (change-only stylesheets)

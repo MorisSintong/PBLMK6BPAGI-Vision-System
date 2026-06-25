@@ -25,7 +25,8 @@ main.py → MainWindow
                           ├── DepthProcessingStage (LUT colormap + multi-zone)
                           ├── YOLODetectionStage (dual-model swap + CLAHE)
                           ├── FusionStage (overlap matching + priority matrix)
-                          └── VisualAnnotationStage (HUD rendering)
+                          ├── NavigationStage (gap-based steering, VFH-lite)
+                          └── VisualAnnotationStage (HUD + steering arrow)
 ```
 
 ## Fitur Utama
@@ -58,10 +59,11 @@ main.py → MainWindow
 ├── data-collection.md         # Dataset acquisition guide (R5)
 ├── environment.yml            # Conda/pip dependencies
 ├── pyproject.toml             # Ruff + pytest config
-├── tests/                     # Test suite (123 tests)
-│   ├── test_frame_processor.py    # 69 tests — pipeline, fusion, dark mode, annotation
+├── tests/                     # Test suite (138 tests)
+│   ├── test_frame_processor.py    # 83 tests — pipeline, fusion, navigation, dark mode, annotation
 │   ├── test_obstacle_detector.py  # 31 tests — detection, zones, filtering, thread safety
-│   └── test_camera_thread.py      # 24 tests — signals, thresholds, QImage, cache
+│   ├── test_camera_thread.py      # 24 tests — signals, thresholds, QImage, cache
+│   └── benchmark.py               # Benchmark suite (17 criteria from ROLES.md)
 ├── Vision/
 │   ├── src/                   # Core vision modules
 │   │   ├── camera_thread.py   # Capture + filter + pipeline (separate acq thread)
@@ -134,10 +136,10 @@ python -m pytest tests/test_frame_processor.py -v
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `test_frame_processor.py` | 69 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zones, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model), VisualAnnotationStage, full pipeline integration |
+| `test_frame_processor.py` | 83 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zones, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model), NavigationStage (clear/blocked/steering/safety override/speed), VisualAnnotationStage, full pipeline integration |
 | `test_obstacle_detector.py` | 31 | Detection, zones, filtering (min_area, max_area_ratio, distance), priority, frame handling (no copy regression), buffer reuse, thread safety, output contract |
-| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals |
-| **Total** | **123** | |
+| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR->QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals |
+| **Total** | **138** | |
 
 ## Pipeline Architecture
 
