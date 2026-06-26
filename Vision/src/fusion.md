@@ -1,26 +1,26 @@
-# FusionStage — Sensor Fusion Documentation
+# FusionStage — Dokumentasi Sensor Fusion
 
 ## Overview
 
-`FusionStage` merges semantic data from YOLO (R2) with spatial data from Depth (R3) to produce a single unified obstacle list. It answers the question: **"What is this object, and how far away is it?"**
+`FusionStage` menggabungkan data semantik dari YOLO (R2) dengan data spasial dari Depth (R3) untuk menghasilkan satu daftar obstacle terpadu. Ia menjawab pertanyaan: **"Apakah objek ini, dan seberapa jauh jaraknya?"**
 
-### Pipeline Position
+### Posisi Pipeline
 
 ```
 CameraThread
   └─ FrameProcessor
        ├─ Stage A: DepthProcessingStage (R3)  → FrameData.obstacles
        ├─ Stage B: YOLODetectionStage (R2)    → FrameData.detections
-       ├─ Stage C: FusionStage (R4)           → FrameData.fused_output  ← THIS
+       ├─ Stage C: FusionStage (R4)           → FrameData.fused_output  ← INI
        ├─ Stage D: NavigationStage (R1)       → FrameData.navigation
        └─ Stage E: VisualAnnotationStage (R1) → FrameData.rgb_frame + depth_colormap (HUD)
 ```
 
 ---
 
-## Input Contracts
+## Kontrak Input
 
-### From R3 (DepthProcessingStage) — `FrameData.obstacles`
+### Dari R3 (DepthProcessingStage) — `FrameData.obstacles`
 
 ```python
 [
@@ -35,7 +35,7 @@ CameraThread
 ]
 ```
 
-### From R2 (YOLODetectionStage) — `FrameData.detections`
+### Dari R2 (YOLODetectionStage) — `FrameData.detections`
 
 ```python
 [
@@ -49,7 +49,7 @@ CameraThread
 ]
 ```
 
-### From Metadata — `FrameData.metadata`
+### Dari Metadata — `FrameData.metadata`
 
 ```python
 {
@@ -60,13 +60,13 @@ CameraThread
 
 ---
 
-## Two-Pass Architecture
+## Arsitektur Two-Pass
 
-FusionStage uses a **two-pass** approach:
+FusionStage menggunakan pendekatan **two-pass**:
 
-### PASS 1 — YOLO-first Direct Depth Sampling (skipped in dark mode)
+### PASS 1 — Direct Depth Sampling YOLO-first (dilewati di dark mode)
 
-For each YOLO detection, depth is **sampled directly** from the depth frame within the YOLO bbox. This gives both class name and distance in one step — no need to match YOLO boxes to depth obstacle contours.
+Untuk setiap deteksi YOLO, depth **di-sampling langsung** dari depth frame di dalam bbox YOLO. Ini memberikan class name dan jarak sekaligus dalam satu langkah — tidak perlu mencocokkan box YOLO ke contour obstacle depth.
 
 ```python
 for det in data.detections:
@@ -91,13 +91,13 @@ def _sample_depth_in_bbox(depth_frame, depth_scale, bbox):
     return float(np.percentile(valid, 25))  # 25th percentile
 ```
 
-**Why 25th percentile?** This gives the distance to the **closest surface** of the object — what matters for collision avoidance. The center 60% region avoids background pixels that bleed into the bbox edges.
+**Kenapa persentil ke-25?** Ini memberikan jarak ke **permukaan terdekat** dari objek — yang penting untuk collision avoidance. Region tengah 60% menghindari piksel background yang bocor ke tepi bbox.
 
-**Why skip PASS 1 in dark mode?** In dark mode, YOLO runs on the depth colormap (not RGB), so the detections may not correspond to the same objects as the depth obstacles. It's better to rely on PASS 2 depth-only obstacles.
+**Kenapa PASS 1 dilewati di dark mode?** Di dark mode, YOLO berjalan pada depth colormap (bukan RGB), sehingga deteksi mungkin tidak sesuai dengan objek yang sama seperti obstacle depth. Lebih baik mengandalkan obstacle depth-only dari PASS 2.
 
-### PASS 2 — Depth-only Obstacles
+### PASS 2 — Obstacle Depth-only
 
-For depth obstacles not covered by any YOLO detection (from PASS 1), add them as generic "obstacle" class. This catches objects YOLO missed.
+Untuk obstacle depth yang tidak dicover oleh deteksi YOLO manapun (dari PASS 1), tambahkan sebagai class "obstacle" generik. Ini menangkap objek yang terlewat oleh YOLO.
 
 ```python
 for obs in data.obstacles:
@@ -112,21 +112,21 @@ for obs in data.obstacles:
 
 ---
 
-## Overlap Metric for PASS 2
+## Metrik Overlap untuk PASS 2
 
-In PASS 2, we need to check if a depth obstacle is already covered by a YOLO detection. We use:
+Di PASS 2, kita perlu memeriksa apakah sebuah obstacle depth sudah dicover oleh deteksi YOLO. Kita menggunakan:
 
 ```
 overlap_ratio = Area(Intersection) / min(Area(Depth), Area(YOLO))
 ```
 
-This uses the **smallest area** as denominator, so:
-- A small depth blob inside a large YOLO box → high overlap (correct)
-- A small YOLO box inside a large depth blob → high overlap (correct)
+Ini menggunakan **area terkecil** sebagai denominator, sehingga:
+- Blob depth kecil di dalam box YOLO besar → overlap tinggi (benar)
+- Box YOLO kecil di dalam blob depth besar → overlap tinggi (benar)
 
-### Why Not IoU?
+### Kenapa Tidak IoU?
 
-Standard IoU fails when box sizes differ significantly:
+IoU standar gagal ketika ukuran box berbeda signifikan:
 
 ```
 YOLO detects a full "person" (200 × 500px = 100,000 px²)
@@ -137,55 +137,55 @@ IoU = 8,000 / (100,000 + 8,000 - 8,000) = 0.08  →  REJECTED
 overlap_ratio = 8,000 / min(8,000, 100,000) = 8,000 / 8,000 = 1.0  →  MATCHED
 ```
 
-### Why `min(area)` instead of `depth_area` only?
+### Kenapa `min(area)` alih-alih hanya `depth_area`?
 
-Using `min(depth_area, yolo_area)` handles both cases:
-- Depth blob small, YOLO box large → denominator = depth_area (same as before)
-- YOLO box small, depth blob large → denominator = yolo_area (prevents false match)
+Menggunakan `min(depth_area, yolo_area)` menangani kedua kasus:
+- Blob depth kecil, box YOLO besar → denominator = depth_area (sama seperti sebelumnya)
+- Box YOLO kecil, blob depth besar → denominator = yolo_area (mencegah false match)
 
-### The AABB Inflation Problem
+### Masalah Inflasi AABB
 
-`cv2.boundingRect(contour)` returns an **Axis-Aligned Bounding Box (AABB)** that includes empty space for irregular shapes. Using `area_px` (contourArea) as the depth area gives the **true** ratio and avoids rejecting valid matches.
+`cv2.boundingRect(contour)` mengembalikan **Axis-Aligned Bounding Box (AABB)** yang menyertakan ruang kosong untuk bentuk tidak beraturan. Menggunakan `area_px` (contourArea) sebagai area depth memberikan rasio **sebenarnya** dan menghindari penolakan match yang valid.
 
 ---
 
-## Adaptive Matching Threshold
+## Threshold Matching Adaptif
 
-The overlap threshold adapts to lighting conditions:
+Threshold overlap beradaptasi terhadap kondisi pencahayaan:
 
-| Condition | Threshold | Why |
+| Kondisi | Threshold | Kenapa |
 |---|---|---|
-| Normal (is_dark=False, rgb_confidence ≥ 0.5) | 0.5 (50%) | Strict matching when YOLO is reliable |
-| Dark or low confidence | 0.3 (30%) | Relaxed matching when YOLO may be inaccurate |
+| Normal (is_dark=False, rgb_confidence ≥ 0.5) | 0.5 (50%) | Matching ketat saat YOLO andal |
+| Dark atau confidence rendah | 0.3 (30%) | Matching dilonggarkan saat YOLO mungkin tidak akurat |
 
 ---
 
-## Priority Matrix
+## Matriks Prioritas
 
-### PASS 1 (YOLO detections with depth)
+### PASS 1 (deteksi YOLO dengan depth)
 
-| Class | Distance | Priority | Action |
+| Class | Jarak | Priority | Action |
 |---|---|---|---|
 | person | < `danger_distance` | 0 | STOP |
 | other | < `danger_distance` | 1 | None |
 | person | < `warning_distance` | 2 | None |
 | other | ≥ `danger_distance` | 3 | None |
 
-### PASS 2 (depth-only obstacles)
+### PASS 2 (obstacle depth-only)
 
-| Distance | Priority | Why |
+| Jarak | Priority | Kenapa |
 |---|---|---|
-| < 0.5m | 1 | Very close — demoted from 0 to avoid false STOP on generic obstacles |
-| < 1.0m | 2 | Close — warning level |
+| < 0.5m | 1 | Sangat dekat — diturunkan dari 0 untuk menghindari STOP palsu pada obstacle generik |
+| < 1.0m | 2 | Dekkat — level warning |
 | ≥ 1.0m | 3 | Normal |
 
-Thresholds come from `DetectionConfig` (configurable at runtime via GUI sliders):
+Threshold berasal dari `DetectionConfig` (dapat dikonfigurasi saat runtime via slider GUI):
 - `danger_distance` (default: 1.5m)
 - `warning_distance` (default: 3.0m)
 
 ---
 
-## Output Format
+## Format Output
 
 ```python
 [
@@ -205,7 +205,7 @@ Thresholds come from `DetectionConfig` (configurable at runtime via GUI sliders)
 
 ## Test Coverage
 
-FusionStage is covered by 30+ tests in `tests/test_frame_processor.py`:
+FusionStage dicover oleh 30+ test di `tests/test_frame_processor.py`:
 
 - Matching: YOLO + depth, no match, multiple detections
 - Priority: person close (0/STOP), obstacle close (1), warning (2), far (3)

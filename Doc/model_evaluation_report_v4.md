@@ -52,9 +52,9 @@ Pengujian dilakukan menggunakan `DatasetDepth_V4-2471 Frame` (split *test*).
 
 ---
 
-## 5. Key Findings & Recommendations
+## 5. Temuan Utama & Rekomendasi
 
-### Findings
+### Temuan
 1. **Peningkatan Akurasi Signifikan:** Transisi dari model algoritma *Bounding Box* (Detection) ke *Pixel Masking* (Segmentation) membuat prediksi bentuk objek menjadi jauh lebih presisi.
 2. **Bottleneck Komputasi CPU:** Kompleksitas *Segmentation* melipatgandakan waktu pemrosesan di CPU, menyebabkan performa jatuh menjadi rata-rata $\sim$ 5 FPS.
 

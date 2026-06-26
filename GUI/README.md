@@ -40,7 +40,7 @@ Modul GUI bertanggung jawab untuk:
 4. `DepthView` memeriksa integritas image buffer dan me-render visual overlay (HUD bounding box) ke layar. Hanya label untuk page visible yang di-update.
 5. `RadarView` dan `AlertPanel` memperbarui UI secara real-time dari data spasial obstacle. Radar menggunakan cached background, AlertPanel hanya update stylesheet saat status berubah.
 
-## Performance Optimizations
+## Optimasi Performa
 
 | Optimization | File | Impact |
 |---|---|---|
