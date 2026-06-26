@@ -162,10 +162,8 @@ class MainWindow(QMainWindow):
         frame_width = 640
         for obs in obstacles:
             bbox = obs.get("bbox", [0, 0, 0, 0])
-            center_x = bbox[0] + bbox[2] // 2
-            angle_deg = 180 * center_x / frame_width
             radar_data.append({
-                "angle_deg": angle_deg,
+                "bbox": bbox,
                 "distance_m": obs.get("distance_m", 0),
                 "zone": obs.get("zone", "CENTER").upper(),
             })
