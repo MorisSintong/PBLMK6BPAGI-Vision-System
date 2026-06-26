@@ -24,7 +24,7 @@ dependencies:
       - pyqt6==6.7.0
       - pyqt6-qt6==6.7.0
       - pyrealsense2==2.55.1.6486 # Intel RealSense SDK wrapper
-      - ultralytics==8.2.0 # YOLOv8-nano for object detection
+      - ultralytics==8.4.77 # YOLOv8 (needs C3k2 module for V4.2/V4 models)
       - open3d==0.18.0 # point cloud viewer (optional)
       - pytest==8.0.0 # testing framework
       - pytest-qt==4.4.0 # Qt testing utilities
