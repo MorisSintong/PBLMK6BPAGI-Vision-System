@@ -226,6 +226,16 @@ def test_obstacles_ready_signal_defined():
     assert hasattr(thread, "obstacles_ready")
 
 
+def test_navigation_ready_signal_defined():
+    thread = CameraThread()
+    assert hasattr(thread, "navigation_ready")
+
+
+def test_light_mode_changed_signal_defined():
+    thread = CameraThread()
+    assert hasattr(thread, "light_mode_changed")
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Processor Integration
 # ═══════════════════════════════════════════════════════════════════════════════

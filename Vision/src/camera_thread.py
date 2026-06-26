@@ -43,6 +43,7 @@ class CameraThread(QThread):
     distance_info_ready = pyqtSignal(str, object, str)
     obstacles_ready = pyqtSignal(list)
     navigation_ready = pyqtSignal(dict)
+    light_mode_changed = pyqtSignal(bool)
     error = pyqtSignal(str)
 
     def __init__(
@@ -244,6 +245,9 @@ class CameraThread(QThread):
             self.obstacles_ready.emit(final_obstacles)
             if nav_data:
                 self.navigation_ready.emit(nav_data)
+            if self._processor is not None and result is not None:
+                is_dark = result.metadata.get("is_dark", False)
+                self.light_mode_changed.emit(is_dark)
 
         self._acq_running = False
         self._acq_thread.join(timeout=1.0)

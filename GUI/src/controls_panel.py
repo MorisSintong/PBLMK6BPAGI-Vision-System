@@ -23,13 +23,15 @@ class ControlsPanel(QWidget):
     thresholds_changed      = pyqtSignal(float, float)
     depth_threshold_changed = pyqtSignal(float, float)
     view_mode_changed       = pyqtSignal(int)
+    auto_mode_changed       = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._camera_running = False
+        self._auto_mode = True
         self._build_ui()
         self._apply_style()
-        self._on_view_change(0)
+        self._on_view_change_auto()
         self._set_alert_info("Klik Apply untuk kirim threshold alert.")
         self._set_depth_info("Klik Apply untuk kirim threshold depth.")
 
@@ -70,17 +72,17 @@ class ControlsPanel(QWidget):
         view_group.setFont(QFont("Segoe UI", 10))
         view_layout = QHBoxLayout(view_group)
 
+        self.btn_view_auto  = QPushButton("Auto")
         self.btn_view_rgb   = QPushButton("RGB")
         self.btn_view_depth = QPushButton("Depth")
-        self.btn_view_both  = QPushButton("Overlay View")
 
+        self.btn_view_auto.clicked.connect(self._on_view_change_auto)
         self.btn_view_rgb.clicked.connect(lambda: self._on_view_change(0))
         self.btn_view_depth.clicked.connect(lambda: self._on_view_change(1))
-        self.btn_view_both.clicked.connect(lambda: self._on_view_change(2))
 
+        view_layout.addWidget(self.btn_view_auto)
         view_layout.addWidget(self.btn_view_rgb)
         view_layout.addWidget(self.btn_view_depth)
-        view_layout.addWidget(self.btn_view_both)
         main_layout.addWidget(view_group)
 
         # ── Threshold Alert ───────────────────────────────────────────
@@ -158,10 +160,29 @@ class ControlsPanel(QWidget):
         from GUI.inc.styles import GLOBAL_STYLESHEET
         self.setStyleSheet(GLOBAL_STYLESHEET)
 
+    def _on_view_change_auto(self):
+        self._auto_mode = True
+        self.btn_view_auto.setStyleSheet(VIEW_ACTIVE)
+        self.btn_view_rgb.setStyleSheet(VIEW_DEFAULT)
+        self.btn_view_depth.setStyleSheet(VIEW_DEFAULT)
+        self.auto_mode_changed.emit(True)
+
     def _on_view_change(self, mode_index):
+        self._auto_mode = False
+        self.btn_view_auto.setStyleSheet(VIEW_DEFAULT)
         self.btn_view_rgb.setStyleSheet(VIEW_ACTIVE   if mode_index == 0 else VIEW_DEFAULT)
         self.btn_view_depth.setStyleSheet(VIEW_ACTIVE if mode_index == 1 else VIEW_DEFAULT)
-        self.btn_view_both.setStyleSheet(VIEW_ACTIVE  if mode_index == 2 else VIEW_DEFAULT)
+        self.auto_mode_changed.emit(False)
+        self.view_mode_changed.emit(mode_index)
+
+    def update_auto_view(self, is_dark: bool):
+        """Called by MainWindow when light_mode_changed fires in auto mode.
+        Switches the DepthView and updates button highlights without emitting signals."""
+        if not self._auto_mode:
+            return
+        mode_index = 1 if is_dark else 0
+        self.btn_view_rgb.setStyleSheet(VIEW_ACTIVE   if mode_index == 0 else VIEW_DEFAULT)
+        self.btn_view_depth.setStyleSheet(VIEW_ACTIVE if mode_index == 1 else VIEW_DEFAULT)
         self.view_mode_changed.emit(mode_index)
 
     def _on_start(self):

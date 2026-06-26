@@ -41,7 +41,7 @@ def make_synthetic_frames(h=480, w=640, depth_scale=0.001):
 
 
 def make_dark_synthetic_frames(h=480, w=640, depth_scale=0.001):
-    """Create dark RGB + depth frames (brightness < 40)."""
+    """Create dark RGB + depth frames (brightness < 35, triggers dark mode)."""
     rgb = np.random.randint(5, 30, (h, w, 3), dtype=np.uint8)
     depth_m = np.full((h, w), 5.0, dtype=np.float32)
     depth_m[180:380, 250:400] = 1.5
@@ -474,10 +474,14 @@ def benchmark_dark_mode():
     stage._wrapper_depth = None
     stage._depth_model_path = None
 
-    test_brightness = [5, 20, 39, 40, 60, 128, 200, 255]
+    test_brightness = [5, 20, 34, 35, 49, 50, 60, 128, 200, 255]
     results = {}
 
     for brightness in test_brightness:
+        # Fresh stage per test (hysteresis is stateful)
+        stage = YOLODetectionStage()
+        stage._wrapper_rgb = None
+        stage._depth_model_path = None
         rgb = np.full((480, 640, 3), brightness, dtype=np.uint8)
         data = FrameData(rgb_frame=rgb)
         data = stage.process(data)
@@ -485,7 +489,7 @@ def benchmark_dark_mode():
         is_dark = data.metadata["is_dark"]
         conf = data.metadata["rgb_confidence"]
         active = data.metadata["active_model"]
-        expected_dark = brightness < 40
+        expected_dark = brightness < 35
 
         ok = is_dark == expected_dark
         results[brightness] = {"is_dark": is_dark, "conf": conf, "active": active, "ok": ok}
@@ -648,7 +652,7 @@ def main():
     # R2: Dark mode adaptation
     dark_ok = all(v["ok"] for v in results["dark_mode"]["brightness_tests"].values())
     clahe_ok = results["dark_mode"]["clahe_ok"]
-    criteria.append(("R2", "Dark mode detection (brightness < 40)", "All brightness levels tested", dark_ok))
+    criteria.append(("R2", "Dark mode detection (hysteresis: <35 enter, >50 exit)", "All brightness levels tested", dark_ok))
     criteria.append(("R2", "CLAHE enhancement in dark frames", f"Mean brightness increased", clahe_ok))
 
     # R3: Colormap zones

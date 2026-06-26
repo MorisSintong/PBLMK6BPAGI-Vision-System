@@ -310,6 +310,7 @@ class YOLODetectionStage(PipelineStage):
         self._wrapper_rgb = None
         self._wrapper_depth = None
         self._clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        self._is_dark_state = False  # Hysteresis state for dark mode detection
 
         if YOLOWrapper is not None and model_path:
             try:
@@ -332,10 +333,15 @@ class YOLODetectionStage(PipelineStage):
         return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
 
     def process(self, data: FrameData) -> FrameData:
-        # Detect low light (always, even if YOLO model unavailable)
+        # Detect low light with hysteresis (prevents flicker near threshold)
+        # Enter dark mode at brightness < 35, exit at brightness > 50
         brightness = np.mean(data.rgb_frame)
         rgb_confidence = min(brightness / 128.0, 1.0)
-        is_dark = brightness < 40
+        if self._is_dark_state:
+            is_dark = brightness < 50
+        else:
+            is_dark = brightness < 35
+        self._is_dark_state = is_dark
 
         # Store confidence metadata for FusionStage
         data.metadata["rgb_confidence"] = rgb_confidence
@@ -631,11 +637,13 @@ class FusionStage(PipelineStage):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class VisualAnnotationStage(PipelineStage):
-    """Stage terakhir untuk menggambar bounding box dan HUD status ke rgb_frame.
-    
+    """Stage terakhir untuk menggambar bounding box dan HUD status ke frame.
+
     Kontrak:
     - Membaca FrameData.fused_output (atau obstacles jika fusion kosong).
     - Memodifikasi FrameData.rgb_frame in-place.
+    - Juga memodifikasi FrameData.depth_colormap in-place (jika ada) supaya
+      HUD tampil di kedua view saat auto-switch mode.
     """
 
     def __init__(self, config: DetectionConfig = None) -> None:
@@ -643,38 +651,46 @@ class VisualAnnotationStage(PipelineStage):
         self._config = config or DetectionConfig()
 
     def process(self, data: FrameData) -> FrameData:
-        if data.rgb_frame is None:
+        if data.rgb_frame is None and data.depth_colormap is None:
             return data
 
         # Pilih sumber data (Fusion prioritas utama, fallback ke obstacles raw, fallback terakhir YOLO)
         items_to_draw = data.fused_output if data.fused_output else data.obstacles
         source_is_xyxy = bool(data.fused_output)
-        
+
         # Mode fallback YOLO only jika depth tidak aktif
-        yolo_fallback_mode = False
         if not items_to_draw and data.detections:
-            # Konversi YOLO detections ke dict format
             items_to_draw = []
-            yolo_fallback_mode = True
             source_is_xyxy = True
             for det in data.detections:
                 items_to_draw.append({
-                    "bbox": det.bbox, # xyxy
+                    "bbox": det.bbox,
                     "object_class": det.class_name,
                     "priority": 3.0,
-                    "distance_m": 99.0, # Unknown
+                    "distance_m": 99.0,
                     "zone": "center"
                 })
 
+        # Draw HUD on rgb_frame
+        if data.rgb_frame is not None:
+            self._draw_hud(data.rgb_frame, items_to_draw, source_is_xyxy, data)
+
+        # Draw HUD on depth_colormap (so it appears in depth view too)
+        if data.depth_colormap is not None:
+            self._draw_hud(data.depth_colormap, items_to_draw, source_is_xyxy, data)
+
+        return data
+
+    def _draw_hud(self, frame, items_to_draw, source_is_xyxy, data):
+        """Draw bounding boxes, status bar, and navigation HUD on the given frame in-place."""
         global_status = "SAFE"
-        
+
         # 1. Gambar Bounding Boxes
         for item in items_to_draw:
             bbox = item.get("bbox")
             if not bbox or len(bbox) != 4:
                 continue
-            
-            # Normalize to xywh for drawing
+
             if source_is_xyxy:
                 x1, y1, x2, y2 = bbox
                 x, y, w, h = x1, y1, x2 - x1, y2 - y1
@@ -684,43 +700,40 @@ class VisualAnnotationStage(PipelineStage):
             distance = item.get("distance_m", 99.0)
             priority = item.get("priority", 3.0)
             zone_str = item.get("zone", "center")
-            
-            # Tentukan warna dan status global
+
             if priority <= 1.0 or distance < self._config.danger_distance:
-                color = (60, 60, 255)  # Soft Red
+                color = (60, 60, 255)
                 global_status = "DANGER"
             elif priority <= 2.0 or distance < self._config.warning_distance:
-                color = (0, 165, 255)  # Amber
+                color = (0, 165, 255)
                 if global_status != "DANGER":
                     global_status = "WARN"
             else:
-                color = (50, 205, 50)  # Lime Green
+                color = (50, 205, 50)
 
             label = f"[{zone_str.upper()[0]}] {distance:.2f}m"
             if "object_class" in item:
                 label = f"{item['object_class']} {label}"
 
-            # Gambar HUD Corner Brackets
             bracket_len = max(5, min(w, h, 40) // 4)
             thick = 3
-            cv2.line(data.rgb_frame, (x, y), (x + bracket_len, y), color, thick)
-            cv2.line(data.rgb_frame, (x, y), (x, y + bracket_len), color, thick)
-            cv2.line(data.rgb_frame, (x + w, y), (x + w - bracket_len, y), color, thick)
-            cv2.line(data.rgb_frame, (x + w, y), (x + w, y + bracket_len), color, thick)
-            cv2.line(data.rgb_frame, (x, y + h), (x + bracket_len, y + h), color, thick)
-            cv2.line(data.rgb_frame, (x, y + h), (x, y + h - bracket_len), color, thick)
-            cv2.line(data.rgb_frame, (x + w, y + h), (x + w - bracket_len, y + h), color, thick)
-            cv2.line(data.rgb_frame, (x + w, y + h), (x + w, y + h - bracket_len), color, thick)
+            cv2.line(frame, (x, y), (x + bracket_len, y), color, thick)
+            cv2.line(frame, (x, y), (x, y + bracket_len), color, thick)
+            cv2.line(frame, (x + w, y), (x + w - bracket_len, y), color, thick)
+            cv2.line(frame, (x + w, y), (x + w, y + bracket_len), color, thick)
+            cv2.line(frame, (x, y + h), (x + bracket_len, y + h), color, thick)
+            cv2.line(frame, (x, y + h), (x, y + h - bracket_len), color, thick)
+            cv2.line(frame, (x + w, y + h), (x + w - bracket_len, y + h), color, thick)
+            cv2.line(frame, (x + w, y + h), (x + w, y + h - bracket_len), color, thick)
 
-            # Teks Label
             font = cv2.FONT_HERSHEY_SIMPLEX
             scale = 0.6
             thickness = 2
             (text_w, text_h), baseline = cv2.getTextSize(label, font, scale, thickness)
             text_y = max(y - 8, text_h + 4)
-            
-            cv2.rectangle(data.rgb_frame, (x, text_y - text_h - 4), (x + text_w, text_y + 4), (30, 30, 30), -1)
-            cv2.putText(data.rgb_frame, label, (x, text_y), font, scale, color, thickness, cv2.LINE_AA)
+
+            cv2.rectangle(frame, (x, text_y - text_h - 4), (x + text_w, text_y + 4), (30, 30, 30), -1)
+            cv2.putText(frame, label, (x, text_y), font, scale, color, thickness, cv2.LINE_AA)
 
         # 2. Gambar Status Global HUD
         if global_status == "DANGER":
@@ -736,10 +749,10 @@ class VisualAnnotationStage(PipelineStage):
         thickness = 2
         (text_w, text_h), baseline = cv2.getTextSize(status_text, font, scale, thickness)
         sx, sy = 25, 45
-        
-        cv2.rectangle(data.rgb_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), (30, 30, 30), -1)
-        cv2.rectangle(data.rgb_frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), status_color, 1)
-        cv2.putText(data.rgb_frame, status_text, (sx, sy), font, scale, status_color, thickness, cv2.LINE_AA)
+
+        cv2.rectangle(frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), (30, 30, 30), -1)
+        cv2.rectangle(frame, (sx - 8, sy - text_h - 10), (sx + text_w + 8, sy + 10), status_color, 1)
+        cv2.putText(frame, status_text, (sx, sy), font, scale, status_color, thickness, cv2.LINE_AA)
 
         # 3. Gambar Navigation HUD (steering arrow + speed)
         if data.navigation:
@@ -748,35 +761,29 @@ class VisualAnnotationStage(PipelineStage):
             steer_deg = nav.get("steering_angle_deg", 0.0)
             speed = nav.get("speed", 0.0)
 
-            if nav_status == "STOPPED":
-                nav_color = (60, 60, 255)
-            elif nav_status == "BLOCKED":
+            if nav_status in ("STOPPED", "BLOCKED"):
                 nav_color = (60, 60, 255)
             elif nav_status == "AVOIDING":
                 nav_color = (0, 165, 255)
             else:
                 nav_color = (50, 205, 50)
 
-            # Steering text (bottom-left)
             nav_text = f"NAV: {nav_status} | STEER {steer_deg:+.0f} deg | SPD {speed:.0%}"
             font = cv2.FONT_HERSHEY_SIMPLEX
             scale = 0.6
             thickness = 2
             (nt_w, nt_h), _ = cv2.getTextSize(nav_text, font, scale, thickness)
-            nx, ny = 25, data.rgb_frame.shape[0] - 20
-            cv2.rectangle(data.rgb_frame, (nx - 8, ny - nt_h - 6), (nx + nt_w + 8, ny + 6), (30, 30, 30), -1)
-            cv2.putText(data.rgb_frame, nav_text, (nx, ny), font, scale, nav_color, thickness, cv2.LINE_AA)
+            nx, ny = 25, frame.shape[0] - 20
+            cv2.rectangle(frame, (nx - 8, ny - nt_h - 6), (nx + nt_w + 8, ny + 6), (30, 30, 30), -1)
+            cv2.putText(frame, nav_text, (nx, ny), font, scale, nav_color, thickness, cv2.LINE_AA)
 
-            # Steering arrow (bottom-center of frame)
-            cx = data.rgb_frame.shape[1] // 2
-            cy = data.rgb_frame.shape[0] - 40
+            cx = frame.shape[1] // 2
+            cy = frame.shape[0] - 40
             arrow_len = 60
             angle_rad = np.radians(steer_deg)
             ax = int(cx + arrow_len * np.sin(angle_rad))
             ay = int(cy - arrow_len * np.cos(angle_rad))
-            cv2.arrowedLine(data.rgb_frame, (cx, cy), (ax, ay), nav_color, 3, tipLength=0.3)
-
-        return data
+            cv2.arrowedLine(frame, (cx, cy), (ax, ay), nav_color, 3, tipLength=0.3)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

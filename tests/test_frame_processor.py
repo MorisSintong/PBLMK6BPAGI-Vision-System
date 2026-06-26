@@ -658,7 +658,7 @@ def test_fusion_output_contract_keys():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_yolo_stage_dark_frame_detection():
-    """Dark frame (brightness < 40) should set is_dark=True and rgb_confidence low."""
+    """Dark frame (brightness < 35) should set is_dark=True and rgb_confidence low."""
     stage = YOLODetectionStage()
     rgb_dark = np.full((480, 640, 3), 10, dtype=np.uint8)
     data = FrameData(rgb_frame=rgb_dark)
@@ -678,11 +678,44 @@ def test_yolo_stage_bright_frame_detection():
 
 
 def test_yolo_stage_brightness_boundary():
-    """Brightness exactly 40 → is_dark = False (threshold is < 40)."""
+    """Brightness 40 (above enter threshold 35, below exit threshold 50) → not dark initially."""
     stage = YOLODetectionStage()
     rgb = np.full((480, 640, 3), 40, dtype=np.uint8)
     data = FrameData(rgb_frame=rgb)
     data = stage.process(data)
+    assert data.metadata["is_dark"] == False
+
+
+def test_yolo_stage_hysteresis_enter_dark():
+    """Brightness below 35 enters dark mode."""
+    stage = YOLODetectionStage()
+    rgb = np.full((480, 640, 3), 30, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb)
+    data = stage.process(data)
+    assert data.metadata["is_dark"] == True
+
+
+def test_yolo_stage_hysteresis_stays_dark():
+    """Once in dark mode, brightness up to 50 stays dark (hysteresis)."""
+    stage = YOLODetectionStage()
+    # Enter dark mode
+    rgb_dark = np.full((480, 640, 3), 20, dtype=np.uint8)
+    stage.process(FrameData(rgb_frame=rgb_dark))
+    # Brightness 45 — would be "not dark" without hysteresis (< 35), but stays dark (< 50)
+    rgb_mid = np.full((480, 640, 3), 45, dtype=np.uint8)
+    data = stage.process(FrameData(rgb_frame=rgb_mid))
+    assert data.metadata["is_dark"] == True
+
+
+def test_yolo_stage_hysteresis_exits_dark():
+    """Once in dark mode, brightness above 50 exits dark mode."""
+    stage = YOLODetectionStage()
+    # Enter dark mode
+    rgb_dark = np.full((480, 640, 3), 20, dtype=np.uint8)
+    stage.process(FrameData(rgb_frame=rgb_dark))
+    # Brightness 55 — above exit threshold 50
+    rgb_bright = np.full((480, 640, 3), 55, dtype=np.uint8)
+    data = stage.process(FrameData(rgb_frame=rgb_bright))
     assert data.metadata["is_dark"] == False
 
 
@@ -929,6 +962,84 @@ def test_visual_annotation_modifies_in_place():
     }]
     result = stage.process(data)
     assert result.rgb_frame is rgb  # Same numpy array object
+
+
+def test_visual_annotation_draws_on_depth_colormap():
+    """HUD should also be drawn on depth_colormap (for auto-switch depth view)."""
+    stage = VisualAnnotationStage()
+    rgb = np.full((480, 640, 3), 128, dtype=np.uint8)
+    depth = np.full((480, 640, 3), 100, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb, depth_colormap=depth)
+    data.fused_output = [{
+        "object_class": "person",
+        "distance_m": 0.5,
+        "zone": "center",
+        "priority": 0,
+        "bbox": [100, 100, 200, 200],
+        "action": "STOP",
+    }]
+    depth_original = depth.copy()
+    stage.process(data)
+    # depth_colormap should have been modified (HUD drawn on it)
+    assert not np.array_equal(depth, depth_original), "Expected depth_colormap to be modified by HUD drawing"
+
+
+def test_visual_annotation_depth_colormap_in_place():
+    """depth_colormap should be modified in-place (same object)."""
+    stage = VisualAnnotationStage()
+    rgb = np.full((480, 640, 3), 128, dtype=np.uint8)
+    depth = np.full((480, 640, 3), 100, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb, depth_colormap=depth)
+    data.fused_output = [{
+        "object_class": "person",
+        "distance_m": 2.0,
+        "zone": "center",
+        "priority": 2,
+        "bbox": [100, 100, 200, 200],
+        "action": None,
+    }]
+    result = stage.process(data)
+    assert result.depth_colormap is depth
+
+
+def test_visual_annotation_none_rgb_with_depth():
+    """None rgb_frame but valid depth_colormap → draws on depth only, no crash."""
+    stage = VisualAnnotationStage()
+    depth = np.full((480, 640, 3), 100, dtype=np.uint8)
+    data = FrameData(rgb_frame=None, depth_colormap=depth)
+    data.fused_output = [{
+        "object_class": "person",
+        "distance_m": 1.0,
+        "zone": "center",
+        "priority": 1,
+        "bbox": [100, 100, 200, 200],
+        "action": "WARN",
+    }]
+    result = stage.process(data)
+    assert result.rgb_frame is None
+    assert result.depth_colormap is not None
+
+
+def test_visual_annotation_nav_hud_on_depth():
+    """Navigation HUD (steering arrow + text) should appear on depth_colormap."""
+    stage = VisualAnnotationStage()
+    rgb = np.full((480, 640, 3), 128, dtype=np.uint8)
+    depth = np.full((480, 640, 3), 100, dtype=np.uint8)
+    data = FrameData(rgb_frame=rgb, depth_colormap=depth)
+    data.navigation = {
+        "steering_angle_deg": 20.0,
+        "speed": 0.5,
+        "status": "AVOIDING",
+        "gaps": [],
+        "histogram": [],
+        "blocked_sectors": [],
+    }
+    depth_original = depth.copy()
+    stage.process(data)
+    # The bottom area of depth should have NAV text drawn
+    nav_region = depth[440:480, 10:400]
+    assert not np.array_equal(nav_region, depth_original[440:480, 10:400]), \
+        "Expected NAV HUD to be drawn on depth_colormap"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         self.camera_thread.obstacles_ready.connect(self._on_obstacles_ready)
         self.camera_thread.navigation_ready.connect(self.alert_panel.update_navigation)
         self.camera_thread.navigation_ready.connect(self.radar.update_navigation)
+        self.camera_thread.light_mode_changed.connect(self._on_light_mode_changed)
         self.camera_thread.error.connect(self._on_camera_error)
         self.camera_thread.set_depth_thresholds(
             self.controls_panel.spin_depth_min.value(),
@@ -169,6 +170,9 @@ class MainWindow(QMainWindow):
                 "zone": obs.get("zone", "CENTER").upper(),
             })
         self.radar.update_obstacles(radar_data)
+
+    def _on_light_mode_changed(self, is_dark: bool):
+        self.controls_panel.update_auto_view(is_dark)
 
     def _on_camera_error(self, message: str):
         self.controls_panel._camera_running = False
