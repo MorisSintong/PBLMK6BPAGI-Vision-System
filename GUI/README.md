@@ -8,7 +8,7 @@ Modul GUI bertanggung jawab untuk:
 - Menampilkan stream kamera (RGB/Depth dengan auto-switch berdasarkan pencahayaan)
 - Menerima interaksi operator (start/stop kamera, pilih mode tampilan)
 - Menampilkan informasi status/alert ke operator
-- Merender radar 180° dengan posisi obstacle real-time
+- Merender radar 90° FOV dengan posisi obstacle real-time
 
 ## Struktur Folder
 
@@ -23,7 +23,7 @@ Modul GUI bertanggung jawab untuk:
 | `depth_view.py` | Area display dengan 2 mode: RGB dan Depth (Overlay dihapus). `setScaledContents` di-set sekali di init. Hanya update label untuk page yang sedang visible. Menangani empty fallback frames via `QImage.isNull()`. |
 | `controls_panel.py` | Kontrol kamera utama, pengaturan jarak alert dinamis, dan pilihan view mode (Auto/RGB/Depth). Auto mode mengikuti sinyal `light_mode_changed` dari CameraThread. |
 | `alert_panel.py` | Menampilkan info objek/jarak serta perubahan warna sesuai status threshold (DANGER/WARN/SAFE). Stylesheet hanya di-update saat status berubah (pre-computed style dicts). |
-| `radar_view.py` | Widget radar 180° dengan cached static background pixmap. Hanya sweep line dan obstacle blips yang di-redraw per frame. Terhubung ke data via `obstacles_ready` signal. |
+| `radar_view.py` | Widget radar 90° FOV dengan cached static background pixmap. Hanya sweep line dan obstacle blips yang di-redraw per frame. Terhubung ke data via `obstacles_ready` signal. |
 
 ## Konfigurasi (`inc`)
 

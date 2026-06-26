@@ -31,7 +31,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | `FusionStage` | R4 (Rasyid) | PASS 1: YOLO-first direct depth sampling. PASS 2: depth-only obstacles. Adaptive overlap threshold (0.3 dark, 0.5 normal). Priority matrix from DetectionConfig |
 | `VisualAnnotationStage` | R1 | HUD corner brackets, labels, global status bar (SAFE/WARN/DANGER), steering arrow. Renders in-place on both rgb_frame and depth_colormap (auto-switch view support) |
 | Auto-switch RGB/Depth view | R1 | Auto/RGB/Depth buttons. Auto mode follows is_dark, manual override available. Hysteresis prevents flicker. Overlay page removed |
-| RadarView 180° | R6 | Cached static background pixmap. Only sweep + blips redrawn. 20fps timer |
+| RadarView 90° FOV | R6 | Cached static background pixmap. Only sweep + blips redrawn. 20fps timer |
 | AlertPanel optimization | R6 | Status-change-only stylesheet updates (no redundant recalc). Pre-computed style dicts |
 | DepthView optimization | R6 | setScaledContents once in init. Only updates visible page labels (RGB / Depth, no Overlay) |
 | CameraThread optimization | R1 | Removed msleep (queue provides flow control). Cached empty depth QImage. numpy BGR→RGB swap |
@@ -82,7 +82,7 @@ main.py → MainWindow
               ├── DepthView (2 mode: RGB / Depth, visible-only updates, auto-switch by light)
               ├── ControlsPanel (start/stop, thresholds, Auto/RGB/Depth view mode)
               ├── AlertPanel (object info + zone + action, cached stylesheets)
-              ├── RadarView (180° semicircle, cached static background)
+              ├── RadarView (90° FOV wedge, cached static background)
               └── CameraThread
                     ├── Acquisition thread (separate, queue maxsize=2)
                     │     ├── RealSense capture + depth filters

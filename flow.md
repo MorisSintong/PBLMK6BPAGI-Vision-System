@@ -565,9 +565,9 @@ Membaca jarak dan zone dari `distance_info_ready` dan memperbarui:
 
 **Optimisasi:** Stylesheet hanya diterapkan saat status **berubah** (mis., SAFE → DANGER). Pada kondisi tunak, nol kalkulasi ulang stylesheet per frame.
 
-### 5.3 RadarView (Display Spasial 180°)
+### 5.3 RadarView (Display Spasial 90° FOV)
 
-Merender radar top-down semicircular yang menunjukkan posisi obstacle.
+Merender radar top-down 90° FOV wedge yang menunjukkan posisi obstacle.
 
 **Optimisasi:** Background statis (ring, label, garis FOV, garis zone) di-**pre-render sekali** ke dalam `QPixmap` yang di-cache. Hanya garis sweep dan blip obstacle yang digambar ulang setiap frame. Ini mengurangi pekerjaan paint sebesar ~80%.
 
