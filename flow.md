@@ -49,9 +49,9 @@ Frame depth mentah adalah array unsigned integer 16-bit (`z16` format) di mana s
 Acquisition thread menangkap **unfiltered depth frame** sebelum filter RealSense SDK diterapkan. Depth mentah ini dipertahankan karena model depth R2 (`ModelDepth_V4.pt`) dilatih pada colormap depth tanpa filter. Depth yang difilter digunakan untuk display dan deteksi obstacle.
 
 ```
-depth_raw_unfiltered = np.asanyarray(depth_frame.get_data())  # BEFORE filters
-# ... apply filters to depth_frame ...
-depth_raw_filtered = np.asanyarray(depth_frame.get_data())    # AFTER filters
+depth_raw_unfiltered = np.asanyarray(depth_frame.get_data())  # SEBELUM filter
+# ... terapkan filter ke depth_frame ...
+depth_raw_filtered = np.asanyarray(depth_frame.get_data())    # SESUDAH filter
 ```
 
 Keduanya dilewatkan melalui queue sebagai tuple 3-elemen: `(color_bgr, depth_raw, depth_raw_unfiltered)`.
@@ -102,16 +102,16 @@ Loop pemrosesan menarik frame dari queue dan menyerahkan array NumPy ke `FramePr
 @dataclass
 class FrameData:
     rgb_frame: np.ndarray              # H×W×3 uint8 BGR
-    depth_frame: Optional[np.ndarray]  # H×W uint16 (filtered, None for webcam)
-    depth_frame_raw: Optional[np.ndarray]  # H×W uint16 (unfiltered, for depth model)
-    depth_colormap: Optional[np.ndarray]   # H×W×3 uint8 (filtered, for display)
-    depth_colormap_raw: Optional[np.ndarray]  # H×W×3 uint8 (unfiltered, for depth model)
-    depth_scale: float                 # raw → meters conversion factor
-    obstacles: List[Dict]              # from DepthProcessingStage
-    detections: List[Detection]        # from YOLODetectionStage
-    fused_output: List[Dict]           # from FusionStage
+    depth_frame: Optional[np.ndarray]  # H×W uint16 (terfilter, None untuk webcam)
+    depth_frame_raw: Optional[np.ndarray]  # H×W uint16 (tanpa filter, untuk model depth)
+    depth_colormap: Optional[np.ndarray]   # H×W×3 uint8 (terfilter, untuk display)
+    depth_colormap_raw: Optional[np.ndarray]  # H×W×3 uint8 (tanpa filter, untuk model depth)
+    depth_scale: float                 # faktor konversi raw → meter
+    obstacles: List[Dict]              # dari DepthProcessingStage
+    detections: List[Detection]        # dari YOLODetectionStage
+    fused_output: List[Dict]           # dari FusionStage
     metadata: Dict[str, Any]           # timestamp, is_dark, rgb_confidence, active_model
-    errors: List[str]                  # pipeline error log
+    errors: List[str]                  # log error pipeline
 ```
 
 ### 3.2 Stage A: `DepthProcessingStage` (Pemahaman Spasial)
@@ -123,20 +123,20 @@ Stage ini mengkonversi data depth mentah menjadi informasi obstacle terstruktur 
 Alih-alih membuat beberapa boolean mask per frame (lambat), stage ini menggunakan **Lookup Table (LUT) pre-computed 256-entry** yang memetakan indeks depth ke warna BGR:
 
 ```python
-# Build once at init (and rebuild on threshold change)
+# Build sekali saat init (dan rebuild saat threshold berubah)
 lut = np.zeros((256, 3), dtype=np.uint8)
 for i in range(256):
     depth_m = (i / 255.0) * max_distance
     if depth_m < min_distance or depth_m > max_distance:
-        lut[i] = (0, 0, 0)        # Black = invalid
+        lut[i] = (0, 0, 0)        # Hitam = invalid
     elif depth_m < danger_threshold:
-        lut[i] = (0, 0, 255)       # Red = danger
+        lut[i] = (0, 0, 255)       # Merah = danger
     elif depth_m < warning_threshold:
-        lut[i] = (0, 255, 255)     # Yellow = warning
+        lut[i] = (0, 255, 255)     # Kuning = warning
     else:
-        lut[i] = (0, 255, 0)       # Green = safe
+        lut[i] = (0, 255, 0)       # Hijau = safe
 
-# Per frame: single indexing operation (~3x faster than mask approach)
+# Per frame: operasi indexing tunggal (~3x lebih cepat dari mask approach)
 depth_m = depth_frame.astype(np.float32) * depth_scale
 idx = np.clip(depth_m * scale, 0, 255).astype(np.uint8)
 colormap = self._depth_lut[idx]
@@ -148,7 +148,7 @@ colormap = self._depth_lut[idx]
 scale = 255.0 / max_distance
 ```
 
-Setiap nilai depth dalam meter dikalikan dengan `scale` untuk dipetakan ke indeks 0–255. Misalnya, `max_distance = 5.0m` menghasilkan `scale = 51.0`, sehingga depth 2.5m → indeks 127 (kuning/warning zone). Nilai di luar `[0, max_distance]` di-clip ke 0 atau 255, yang sudah dipetakan ke hitam (invalid) di LUT.
+Setiap nilai depth dalam meter dikalikan dengan `scale` untuk dipetakan ke indeks 0–255. Misalnya, dengan `max_distance = 5.0m` menghasilkan `scale = 51.0`, sehingga depth 2.5m → indeks 127. Dengan threshold default (danger=1.5m, warning=3.0m), indeks 127 berada di zona kuning (warning). Nilai di luar `[0, max_distance]` di-clip ke 0 atau 255, yang sudah dipetakan ke hitam (invalid) di LUT.
 
 LUT dibangun ulang setiap kali threshold berubah via `set_action_thresholds()` atau `set_thresholds()`.
 
@@ -206,7 +206,7 @@ Setiap frame dianalisis untuk kecerahan:
 ```python
 brightness = np.mean(data.rgb_frame)
 rgb_confidence = min(brightness / 128.0, 1.0)
-# Hysteresis: enter dark at < 35, exit at > 50 (prevents flicker near threshold)
+# Hysteresis: masuk dark saat < 35, keluar saat > 50 (mencegah flicker di sekitar threshold)
 if self._is_dark_state:
     is_dark = brightness < 50
 else:
@@ -266,10 +266,10 @@ input_size = 320 × 320 pixels (configurable)
 ```python
 @dataclass
 class Detection:
-    class_id: int        # COCO class index (e.g., 0 = person)
-    class_name: str      # Human-readable name (e.g., "person")
+    class_id: int        # indeks class COCO (mis., 0 = person)
+    class_name: str      # nama yang dapat dibaca (mis., "person")
     confidence: float    # 0.0 – 1.0
-    bbox: List[int]      # [x1, y1, x2, y2] in pixels (xyxy format)
+    bbox: List[int]      # [x1, y1, x2, y2] dalam pixel (format xyxy)
 ```
 
 ### 3.4 Stage C: `FusionStage` (Penggabungan Data)
@@ -337,16 +337,16 @@ Jika `overlap_ratio > threshold`, obstacle sudah tercakup oleh YOLO dan dilewati
 
 Threshold overlap beradaptasi dengan kondisi pencahayaan:
 
-| Condition | Threshold | Why |
+| Kondisi | Threshold | Alasan |
 |---|---|---|
-| Normal (is_dark=False, rgb_confidence ≥ 0.5) | 0.5 (50%) | Strict matching when YOLO is reliable |
-| Dark or low confidence | 0.3 (30%) | Relaxed matching when YOLO may be inaccurate |
+| Normal (is_dark=False, rgb_confidence ≥ 0.5) | 0.5 (50%) | Matching ketat saat YOLO reliable |
+| Dark atau low confidence | 0.3 (30%) | Matching longgar saat YOLO mungkin tidak akurat |
 
 #### 3.4.5 Matriks Prioritas
 
 **PASS 1 (YOLO detections dengan depth):**
 
-| Class | Distance | Priority | Action |
+| Kelas | Jarak | Priority | Aksi |
 |---|---|---|---|
 | person | < `danger_distance` | 0 | STOP |
 | other | < `danger_distance` | 1 | None |
@@ -355,10 +355,10 @@ Threshold overlap beradaptasi dengan kondisi pencahayaan:
 
 **PASS 2 (obstacle depth-only):**
 
-| Distance | Priority | Why |
+| Jarak | Priority | Alasan |
 |---|---|---|
-| < 0.5m | 1 | Very close — demoted from 0 to avoid false STOP |
-| < 1.0m | 2 | Close — warning level |
+| < 0.5m | 1 | Sangat dekat — diturunkan dari 0 untuk menghindari false STOP pada obstacle generik |
+| < 1.0m | 2 | Dekat — level warning |
 | ≥ 1.0m | 3 | Normal |
 
 Threshold berasal dari `DetectionConfig` (dapat dikonfigurasi saat runtime via slider GUI).
@@ -368,11 +368,11 @@ Threshold berasal dari `DetectionConfig` (dapat dikonfigurasi saat runtime via s
 ```python
 {
     "object_class":  str,      # "person", "chair", "obstacle"
-    "distance_m":    float,    # meters
+    "distance_m":    float,    # meter
     "zone":          str,      # "left" | "center" | "right"
-    "priority":      int,      # 0 = most dangerous
-    "bbox":          [x1, y1, x2, y2],  # xyxy format
-    "action":        str | None,         # "STOP" or None
+    "priority":      int,      # 0 = paling berbahaya
+    "bbox":          [x1, y1, x2, y2],  # format xyxy
+    "action":        str | None,         # "STOP" atau None
 }
 ```
 
@@ -382,7 +382,7 @@ Stage ini menghitung rekomendasi steering menggunakan pendekatan **polar histogr
 
 #### 3.5.1 Polar Histogram
 
-Frame depth dibagi menjadi N sektor horizontal (default: 18 sektor ~5° masing-masing). Untuk setiap sektor, jarak percentile ke-10 dihitung (robust terhadap noise):
+Frame depth dibagi menjadi N sektor horizontal (default: 18 sektor dengan lebar ~5° per sektor). Untuk setiap sektor, jarak percentile ke-10 dihitung (robust terhadap noise):
 
 ```
 Sector 0 (leftmost)  → min_dist = 0.3m  (blocked)
@@ -458,9 +458,9 @@ min_dist_ahead = min(histogram[center_start:center_end])
 Dengan `num_sectors = 18`: sektor 6–11 (sepertiga tengah) merepresentasikan area langsung di depan robot. Kecepatan naik secara linear berdasarkan `min_dist_ahead`:
 
 ```
-if min_dist < danger_distance:    speed = 0.0 (stop)
-if min_dist >= warning_distance:  speed = 1.0 (full)
-else:                             speed = (min_dist - danger) / (warning - danger)
+if min_dist_ahead < danger_distance:    speed = 0.0 (stop)
+if min_dist_ahead >= warning_distance:  speed = 1.0 (full)
+else:                                   speed = (min_dist_ahead - danger) / (warning - danger)
 ```
 
 **Kenapa sepertiga tengah?** Sektor tepi (kiri/kanan ekstrem) bisa terhalang oleh dinding atau obstacle di samping yang tidak menghalangi jalur lurus robot. Hanya area di depan langsung yang menentukan apakah robot harus melambat.
@@ -469,12 +469,12 @@ else:                             speed = (min_dist - danger) / (warning - dange
 
 ```python
 {
-    "steering_angle_deg": float,   # -45 (left) to +45 (right), 0 = straight
-    "speed": float,                # 0.0 (stop) to 1.0 (full)
+    "steering_angle_deg": float,   # -45 (kiri) sampai +45 (kanan), 0 = lurus
+    "speed": float,                # 0.0 (stop) sampai 1.0 (full)
     "status": str,                 # "CLEAR" | "AVOIDING" | "BLOCKED" | "STOPPED"
-    "gaps": List[Dict],            # Navigable gaps with angle, width, distance
-    "histogram": List[float],      # Min distance per sector
-    "blocked_sectors": List[bool], # Blocked flag per sector
+    "gaps": List[Dict],            # Gap yang dapat dilalui dengan angle, width, distance
+    "histogram": List[float],      # Jarak minimum per sektor
+    "blocked_sectors": List[bool], # Flag blocked per sektor
 }
 ```
 
@@ -520,7 +520,7 @@ Setelah `FrameProcessor` menyelesaikan pipeline, data harus dikirim dengan aman 
 **Solusi:** Panggil `.tobytes()` untuk membuat copy memory yang terisolasi dan aman:
 
 ```python
-# numpy channel swap (faster than cv2.cvtColor) + .tobytes() for safety
+# numpy channel swap (lebih cepat dari cv2.cvtColor) + .tobytes() untuk safety
 frame_rgb = frame_bgr[:, :, ::-1].copy()
 qimage = QImage(frame_rgb.tobytes(), w, h, bytes_per_line, Format_RGB888)
 ```
@@ -625,19 +625,19 @@ Panjang panah = `0.7 × r` (70% radius radar). Warna panah mengikuti status: mer
 ## Ringkasan Alur
 
 ```
-Camera grabs light (30 FPS)
-  → Acquisition thread captures + filters (spatial, temporal, hole-filling)
-    → Unfiltered depth preserved (for depth model)
-  → Queue delivers frames to processing loop
-    → Depth converts to LUT colormap + obstacle detection
-    → YOLO identifies objects (dual-model swap: RGB/depth/CLAHE)
-    → Fusion matches them (PASS 1: direct sampling, PASS 2: overlap)
-    → Navigation computes steering (polar histogram + gap selection)
-    → Visual annotation draws HUD + steering arrow (in-place)
-  → Signals transmit data (thread-safe QImage + typed signals)
-    → DepthView renders images (visible-only updates)
-    → AlertPanel shows status (change-only stylesheets)
-    → RadarView plots positions (cached background)
+Kamera menangkap cahaya (30 FPS)
+  → Acquisition thread capture + filter (spatial, temporal, hole-filling)
+    → Depth tanpa filter dipertahankan (untuk model depth)
+  → Queue mengantar frame ke loop pemrosesan
+    → Depth dikonversi ke LUT colormap + deteksi obstacle
+    → YOLO mengidentifikasi objek (dual-model swap: RGB/depth/CLAHE)
+    → Fusion mencocokkan keduanya (PASS 1: direct sampling, PASS 2: overlap)
+    → Navigation menghitung steering (polar histogram + gap selection)
+    → Visual annotation menggambar HUD + steering arrow (in-place)
+  → Signal mentransmisikan data (thread-safe QImage + typed signal)
+    → DepthView merender gambar (visible-only updates)
+    → AlertPanel menampilkan status (change-only stylesheets)
+    → RadarView memplot posisi (cached background)
 ```
 
 *(Seluruh siklus ini terjadi dalam waktu kurang dari ~20 milidetik, 30+ kali per detik.)*
