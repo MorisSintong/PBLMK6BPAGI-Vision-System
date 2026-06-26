@@ -8,16 +8,16 @@
 **Orang:** Moris
 
 ### Tanggung jawab
-- Merancang dan mengimplementasikan pipeline vision end-to-end (4 stages)
+- Merancang dan mengimplementasikan pipeline vision end-to-end (5 stages)
 - Mendefinisikan kontrak data antar stage
-- Mengorkestrasi aliran data: Raw Frame → Depth → YOLO → Fusion → Annotation → Output
+- Mengorkestrasi aliran data: Raw Frame → Depth → YOLO → Fusion → Navigation → Annotation → Output
 - Code review untuk semua PR dari Role 2-6
 - Performance optimization (FP16, LUT, lazy loading, buffer reuse)
 
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/frame_processor.py` | Pipeline utama (4 stage: Depth, YOLO, Fusion, Annotation) |
+| `Vision/src/frame_processor.py` | Pipeline utama (5 stage: Depth, YOLO, Fusion, Navigation, Annotation) |
 | `Vision/src/camera_thread.py` | Integrasi pipeline + acquisition thread |
 | `Vision/src/yolowrapper.py` | YOLOv8 wrapper (FP16, warm-up, batch transfer) |
 | `Vision/inc/detection_config.py` | Konfigurasi terpusat |
@@ -25,11 +25,11 @@
 | `main.py` | Inisialisasi FrameProcessor |
 
 ### Selesai bila
-- `frame_processor.py` menerima frame dari CameraThread, menjalankan semua 4 stage, mengembalikan frame teranotasi
+- `frame_processor.py` menerima frame dari CameraThread, menjalankan semua 5 stage, mengembalikan frame teranotasi
 - Pipeline ≥25 FPS (RealSense) / ≥30 FPS (webcam)
 - Semua kontrak antar stage didokumentasikan dan disetujui tim
 - Semua file konfigurasi dikelola sebagai single source of truth
-- 123/123 tests pass
+- 147/147 tests pass
 
 ---
 
@@ -181,7 +181,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 - ✅ Setiap deteksi YOLO punya jarak akurat via direct depth sampling
 - ✅ Prioritas diurutkan benar
 - ✅ Output terstruktur siap dikonsumsi Role 6
-- ✅ 69 tests covering fusion logic
+- ✅ 92 tests covering fusion + navigation + annotation logic
 
 ---
 
@@ -222,7 +222,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 ### Tanggung jawab
 - Memperbarui AlertPanel: nama objek, jarak, zona, status bahaya, rekomendasi aksi
 - Integrasi RadarView (180°, data nyata dari pipeline, cached background)
-- DepthView overlay: bounding box + label kelas + jarak
+- DepthView anotasi: bbox + label + jarak (visible-only updates, auto-switch RGB/Depth)
 - Wiring sinyal dari FrameProcessor ke GUI
 - Maintain stabilitas seluruh widget GUI
 - Performance optimization (cached pixmaps, change-only stylesheets)
@@ -231,8 +231,8 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 | File | Keterangan |
 |---|---|
 | `GUI/src/main_window.py` | Wiring sinyal + pipeline assembly |
-| `GUI/src/depth_view.py` | Display kamera (3 mode, visible-only updates) |
-| `GUI/src/controls_panel.py` | Panel kontrol + threshold sliders |
+| `GUI/src/depth_view.py` | Display kamera (2 mode: RGB/Depth, auto-switch, visible-only updates) |
+| `GUI/src/controls_panel.py` | Panel kontrol + threshold sliders + Auto/RGB/Depth view mode |
 | `GUI/src/alert_panel.py` | Panel info + alert (cached stylesheets) |
 | `GUI/src/radar_view.py` | Radar 180° (cached background pixmap) |
 | `GUI/inc/ui_config.py` | Konstanta UI |
@@ -271,8 +271,8 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 | Role | Status |
 |---|---|
 | R1 | ✅ Selesai (97% — hardware test pending) |
-| R2 | ⏳ Menunggu R5 (dataset) |
+| R2 | ✅ Model selesai (88% — outdoor light stability pending) |
 | R3 | ⏳ Outdoor test pending |
 | R4 | ✅ Selesai (100%) |
-| R5 | ⏳ Dataset + benchmark pending |
-| R6 | ✅ Selesai (100%) |
+| R5 | ✅ Dataset + benchmark selesai (86% — regression test pending) |
+| R6 | ✅ Selesai (83% — 30-min soak + display latency pending) |

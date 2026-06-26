@@ -9,14 +9,16 @@ Aplikasi desktop untuk obstacle avoidance pada security robot:
 - **Object detection** — YOLOv8 dual-model (RGB + Depth), GPU-accelerated with FP16 on RTX A4000
 - **Dark mode adaptation** — CLAHE preprocessing + automatic model swap to depth model in low light
 - **Sensor fusion** — Depth + YOLO overlap matching with adaptive thresholds and priority matrix
-- **Real-time GUI** — PyQt6 dengan 4 tampilan: RGB, Depth, Overlay, Radar 180°
+- **Gap-based navigation** — Polar histogram (VFH-lite) with gap finding, steering output, and speed mapping
+- **Auto-switch view** — Automatically switches between RGB and Depth view based on ambient light (hysteresis: <35 enter dark, >50 exit)
+- **Real-time GUI** — PyQt6 dengan tampilan: Auto/RGB/Depth (auto-switch), Radar 180°, AlertPanel, ControlsPanel
 
 ## Arsitektur
 
 ```
 main.py → MainWindow
-              ├── DepthView (RGB / Depth / Overlay)
-              ├── ControlsPanel (start/stop, thresholds, view mode)
+              ├── DepthView (RGB / Depth, auto-switch by light level)
+              ├── ControlsPanel (start/stop, thresholds, Auto/RGB/Depth view mode)
               ├── AlertPanel (object info + zone + action)
               ├── RadarView (180° semicircle, cached static background)
               └── CameraThread
@@ -59,15 +61,15 @@ main.py → MainWindow
 ├── data-collection.md         # Dataset acquisition guide (R5)
 ├── environment.yml            # Conda/pip dependencies
 ├── pyproject.toml             # Ruff + pytest config
-├── tests/                     # Test suite (138 tests)
-│   ├── test_frame_processor.py    # 83 tests — pipeline, fusion, navigation, dark mode, annotation
+├── tests/                     # Test suite (147 tests)
+│   ├── test_frame_processor.py    # 92 tests — pipeline, fusion, navigation, dark mode, hysteresis, annotation
 │   ├── test_obstacle_detector.py  # 31 tests — detection, zones, filtering, thread safety
 │   ├── test_camera_thread.py      # 24 tests — signals, thresholds, QImage, cache
 │   └── benchmark.py               # Benchmark suite (17 criteria from ROLES.md)
 ├── Vision/
 │   ├── src/                   # Core vision modules
-│   │   ├── camera_thread.py   # Capture + filter + pipeline (separate acq thread)
-│   │   ├── frame_processor.py # Pipeline orchestrator (4 stages)
+│   │   ├── camera_thread.py   # Capture + filter + pipeline (separate acq thread, light_mode_changed signal)
+│   │   ├── frame_processor.py # Pipeline orchestrator (5 stages)
 │   │   ├── obstacle_detector.py # Depth obstacle detection (no frame copy)
 │   │   ├── yolowrapper.py     # YOLOv8 inference (FP16, warm-up, batch transfer)
 │   │   └── recorder.py        # Recording utility
@@ -82,7 +84,7 @@ main.py → MainWindow
 ├── GUI/
 │   ├── src/                   # PyQt6 components
 │   │   ├── main_window.py     # Window layout + wiring
-│   │   ├── depth_view.py      # Camera display (3 modes, visible-only updates)
+│   │   ├── depth_view.py      # Camera display (2 modes: RGB/Depth, visible-only updates)
 │   │   ├── controls_panel.py  # Start/stop + thresholds
 │   │   ├── alert_panel.py     # Object info + alert (cached stylesheets)
 │   │   └── radar_view.py      # 180° radar (cached background pixmap)
@@ -136,14 +138,14 @@ python -m pytest tests/test_frame_processor.py -v
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `test_frame_processor.py` | 83 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zones, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model), NavigationStage (clear/blocked/steering/safety override/speed), VisualAnnotationStage, full pipeline integration |
+| `test_frame_processor.py` | 92 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zones, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model/hysteresis), NavigationStage (clear/blocked/steering/safety override/speed), VisualAnnotationStage (RGB + depth colormap + nav HUD), full pipeline integration |
 | `test_obstacle_detector.py` | 31 | Detection, zones, filtering (min_area, max_area_ratio, distance), priority, frame handling (no copy regression), buffer reuse, thread safety, output contract |
-| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR->QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals |
-| **Total** | **138** | |
+| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR->QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
+| **Total** | **147** | |
 
 ## Pipeline Architecture
 
-Pipeline menggunakan pola **Chain of Responsibility** dengan 4 stage:
+Pipeline menggunakan pola **Chain of Responsibility** dengan 5 stage:
 - Setiap stage mengimplementasikan `PipelineStage` ABC
 - Data mengalir sebagai `FrameData` dataclass
 - Stage bisa di-enable/disable secara modular

@@ -12,7 +12,8 @@ CameraThread
        ├─ Stage A: DepthProcessingStage (R3)  → FrameData.obstacles
        ├─ Stage B: YOLODetectionStage (R2)    → FrameData.detections
        ├─ Stage C: FusionStage (R4)           → FrameData.fused_output  ← THIS
-       └─ Stage D: VisualAnnotationStage (R1) → FrameData.rgb_frame (HUD)
+       ├─ Stage D: NavigationStage (R1)       → FrameData.navigation
+       └─ Stage E: VisualAnnotationStage (R1) → FrameData.rgb_frame + depth_colormap (HUD)
 ```
 
 ---
@@ -52,7 +53,7 @@ CameraThread
 
 ```python
 {
-    "is_dark": bool,          # True if brightness < 40
+    "is_dark": bool,          # True if brightness < 35 (hysteresis: exit at > 50)
     "rgb_confidence": float,  # 0.0–1.0, min(brightness/128, 1.0)
 }
 ```

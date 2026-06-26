@@ -6,7 +6,7 @@
 
 ## Overview
 
-Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 4-stage pipeline, dual-model YOLO, dark mode adaptation, dan 123 tests.
+Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, dan 147 tests.
 
 ---
 
@@ -16,7 +16,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Deliverable | Role | Detail |
 |---|---|---|
-| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 4 stages: DepthProcessing, YOLODetection, Fusion, VisualAnnotation. 123/123 tests pass |
+| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 5 stages: DepthProcessing, YOLODetection, Fusion, Navigation, VisualAnnotation. 147/147 tests pass |
 | Pipeline → CameraThread integration | R1 | Separate acquisition thread + queue(maxsize=2). Camera capture decoupled from processing |
 | Depth filters (preprocessing) | R3 (Long) | Decimation (configurable) → spatial → temporal → hole-filling di CameraThread via pyrealsense2 SDK |
 | Unfiltered depth capture | R1 | `depth_frame_raw` captured BEFORE RS filters for depth model inference |
@@ -27,19 +27,20 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Dual-model swap | R1/R5 | `ModelRGB_V4.2.pt` (normal) + `ModelDepth_V4.pt` (dark mode on unfiltered depth colormap) |
 | Lazy depth model loading | R1 | Depth model loaded only on first dark frame — saves VRAM at startup |
 | CLAHE dark mode | R1 | LAB color space enhancement (clipLimit=3.0) for dim scenes. `rgb_confidence` metadata |
-| Dark mode detection | R1 | brightness < 40 → `is_dark=True`. `active_model` tracks: rgb, rgb_clahe, depth, depth_filtered, none |
+| Dark mode detection (hysteresis) | R1 | brightness < 35 enter dark, > 50 exit dark. `active_model` tracks: rgb, rgb_clahe, depth, depth_filtered, none |
 | `FusionStage` | R4 (Rasyid) | PASS 1: YOLO-first direct depth sampling. PASS 2: depth-only obstacles. Adaptive overlap threshold (0.3 dark, 0.5 normal). Priority matrix from DetectionConfig |
-| `VisualAnnotationStage` | R1 | HUD corner brackets, labels, global status bar (SAFE/WARN/DANGER). Renders in-place on rgb_frame |
+| `VisualAnnotationStage` | R1 | HUD corner brackets, labels, global status bar (SAFE/WARN/DANGER), steering arrow. Renders in-place on both rgb_frame and depth_colormap (auto-switch view support) |
+| Auto-switch RGB/Depth view | R1 | Auto/RGB/Depth buttons. Auto mode follows is_dark, manual override available. Hysteresis prevents flicker. Overlay page removed |
 | RadarView 180° | R6 | Cached static background pixmap. Only sweep + blips redrawn. 20fps timer |
 | AlertPanel optimization | R6 | Status-change-only stylesheet updates (no redundant recalc). Pre-computed style dicts |
-| DepthView optimization | R6 | setScaledContents once in init. Only updates visible page labels |
+| DepthView optimization | R6 | setScaledContents once in init. Only updates visible page labels (RGB / Depth, no Overlay) |
 | CameraThread optimization | R1 | Removed msleep (queue provides flow control). Cached empty depth QImage. numpy BGR→RGB swap |
 | ControlsPanel cleanup | R6 | Styles extracted to `styles.py`. Status constants |
 | Git best practices doc | R1 | `Doc/texDoc/gitBestPractices/gitBestPractices.pdf` |
 | Team roles documentation | R1 | `Doc/texDoc/teamRoles/Roles.pdf` + `ROLES.md` |
 | Model evaluation report | R5 (Hamid) | `Doc/model_evaluation_report_v4.md` — V4.2 RGB (98.37% mAP) + V4 Depth (87.23% mAP) |
 | Dataset acquisition guide | R5 | `data-collection.md` — comprehensive guide for R5 |
-| Test suite | R1 | 138 tests: 83 frame_processor + 31 obstacle_detector + 24 camera_thread. All pass in ~8s |
+| Test suite | R1 | 147 tests: 92 frame_processor + 31 obstacle_detector + 24 camera_thread. All pass in ~24s |
 | Benchmark suite | R1/R5 | `tests/benchmark.py` — 17/17 software criteria PASS (42.5 FPS, P95 30.50ms) |
 | NavigationStage (gap-based steering) | R1 | Polar histogram (18 sectors), gap finding + scoring, hysteresis, safety override, speed mapping |
 | Dataset acquisition (≥300 frames) | R5 (Hamid) | ✅ RGB: 2668 frames, Depth: 2471 frames |
@@ -78,8 +79,8 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 ```
 main.py → MainWindow
-              ├── DepthView (3 mode: RGB / Depth / Overlay, visible-only updates)
-              ├── ControlsPanel (start/stop, thresholds, view mode)
+              ├── DepthView (2 mode: RGB / Depth, visible-only updates, auto-switch by light)
+              ├── ControlsPanel (start/stop, thresholds, Auto/RGB/Depth view mode)
               ├── AlertPanel (object info + zone + action, cached stylesheets)
               ├── RadarView (180° semicircle, cached static background)
               └── CameraThread
@@ -129,13 +130,21 @@ CameraThread (acquisition thread)
                                       │     ├── PASS 2: depth-only obstacles
                                       │     └── fused_output (class + distance + priority)
                                       │
+                                      ├── NavigationStage
+                                      │     ├── Polar histogram (18 sectors)
+                                      │     ├── Gap finding + scoring + hysteresis
+                                      │     └── navigation (steering + speed + status)
+                                      │
                                       └── VisualAnnotationStage
-                                            └── rgb_frame (HUD, in-place modification)
+                                            ├── rgb_frame (HUD + steering arrow, in-place)
+                                            └── depth_colormap (HUD + steering arrow, in-place)
                                       │
                                       └──→ Signals → GUI
                                              ├── frame_pair_ready → DepthView
                                              ├── distance_info_ready → AlertPanel
-                                             └── obstacles_ready → RadarView
+                                             ├── obstacles_ready → RadarView
+                                             ├── navigation_ready → AlertPanel + RadarView
+                                             └── light_mode_changed → ControlsPanel (auto-switch)
 ```
 
 ## Performance Optimizations
@@ -161,10 +170,10 @@ CameraThread (acquisition thread)
 
 | Test File | Tests | Coverage |
 |---|---|---|
-| `test_frame_processor.py` | 69 | FrameData, PipelineStage (disabled, latency, exception), FrameProcessor (stages, thresholds, errors), DepthProcessingStage (LUT colors, raw, rebuild), FusionStage (matching, priority, zones, overlap, dark mode, PASS 2 ladder, contract), YOLODetectionStage (dark/bright/CLAHE/dual-model/none), VisualAnnotationStage (none/empty/fused/obstacles/yolo/danger/in-place), full pipeline integration |
+| `test_frame_processor.py` | 92 | FrameData, PipelineStage (disabled, latency, exception), FrameProcessor (stages, thresholds, errors), DepthProcessingStage (LUT colors, raw, rebuild), FusionStage (matching, priority, zones, overlap, dark mode, PASS 2 ladder, contract), YOLODetectionStage (dark/bright/CLAHE/dual-model/hysteresis/none), NavigationStage (clear/blocked/steering/safety override/speed/output contract), VisualAnnotationStage (none/empty/fused/obstacles/yolo/danger/in-place/depth colormap/nav HUD), full pipeline integration |
 | `test_obstacle_detector.py` | 31 | Instantiation, edge cases (None/zero), zones (single + multi), filtering (min_area, max_area_ratio, distance), priority (inverse, no div-by-zero), distance accuracy, frame handling (no copy regression, no modification), buffer reuse, thread safety, output contract, last_detections copy |
-| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache (cached + shape change), thread lifecycle, signals |
-| **Total** | **125** | All pass in ~8s |
+| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache (cached + shape change), thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
+| **Total** | **147** | All pass in ~24s |
 
 ## Benchmark Results (RTX A4000 Laptop GPU, FP16, 320px)
 
@@ -175,7 +184,7 @@ CameraThread (acquisition thread)
 | R2: YOLO Depth latency P95 | <=50 ms | 24.93 ms | PASS |
 | R2: mAP@0.5 (RGB model) | >=70% | 98.37% (R5 report) | PASS |
 | R2: mAP@0.5 (Depth model) | >=70% | 87.23% (R5 report) | PASS |
-| R2: Dark mode + CLAHE | Works in <40 brightness | All 8 levels correct | PASS |
+| R2: Dark mode + CLAHE | Hysteresis: <35 enter, >50 exit | All 10 levels correct | PASS |
 | R3: Colormap zones | red/yellow/green/black | All 4 correct | PASS |
 | R3: Obstacle accuracy 0.3-5m | +-10% | Max error 0.2% | PASS |
 | R3: 3 zones | left/center/right | All correct | PASS |
@@ -185,8 +194,8 @@ CameraThread (acquisition thread)
 | R5: Dataset >=300 frames | >=300 | RGB: 2668, Depth: 2471 | PASS |
 | R5: Dataset >=3 classes | >=3 | mobil, motor, person | PASS |
 | R5: E2E latency P95 | <=100 ms | 30.50 ms | PASS |
-| R5: Per-stage latency harness | All stages | 4 stages measured | PASS |
-| **Total** | | **16/16 PASS** | |
+| R5: Per-stage latency harness | All stages | 5 stages measured | PASS |
+| **Total** | | **17/17 PASS** | |
 
 ## Known Gaps
 
@@ -213,3 +222,4 @@ CameraThread (acquisition thread)
 | `feature/fusion-stage` | R1/R4 | ✅ Merged |
 | `arch/optimizations` | R1 | ✅ Merged |
 | `swap_model` | R1/R5 | ✅ Merged (dual-model + CLAHE + unfiltered depth) |
+| `feature/navigation-stage` | R1 | ✅ Merged (NavigationStage + auto-switch view + HUD on depth + hysteresis) |

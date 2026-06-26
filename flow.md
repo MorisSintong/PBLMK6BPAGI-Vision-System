@@ -186,10 +186,15 @@ Every frame is analyzed for brightness:
 ```python
 brightness = np.mean(data.rgb_frame)
 rgb_confidence = min(brightness / 128.0, 1.0)
-is_dark = brightness < 40
+# Hysteresis: enter dark at < 35, exit at > 50 (prevents flicker near threshold)
+if self._is_dark_state:
+    is_dark = brightness < 50
+else:
+    is_dark = brightness < 35
+self._is_dark_state = is_dark
 ```
 
-- `is_dark` — boolean, true when brightness < 40
+- `is_dark` — boolean, true when brightness < 35 (enter) or < 50 (exit, hysteresis)
 - `rgb_confidence` — float 0–1, used by FusionStage for adaptive thresholds
 - `active_model` — tracks which model was used: `"rgb"`, `"rgb_clahe"`, `"depth"`, `"depth_filtered"`, `"none"`
 
@@ -199,7 +204,7 @@ The stage selects which model to use based on lighting conditions:
 
 | Condition | Model | Input | active_model |
 |---|---|---|---|
-| Bright (brightness ≥ 40) | `ModelRGB_V4.2.pt` | RGB frame | `"rgb"` |
+| Bright (brightness >= 35) | `ModelRGB_V4.2.pt` | RGB frame | `"rgb"` |
 | Dark + depth model available | `ModelDepth_V4.pt` | Unfiltered depth colormap | `"depth"` |
 | Dark + depth model + no raw | `ModelDepth_V4.pt` | Filtered depth colormap | `"depth_filtered"` |
 | Dark + no depth model | `ModelRGB_V4.2.pt` | CLAHE-enhanced RGB | `"rgb_clahe"` |
@@ -426,7 +431,7 @@ else:                             speed = (min_dist - danger) / (warning - dange
 
 ### 3.6 Stage E: `VisualAnnotationStage` (HUD Rendering)
 
-The final stage draws HUD overlays onto the `rgb_frame` **in-place**:
+The final stage draws HUD overlays onto both `rgb_frame` and `depth_colormap` **in-place** (so the HUD appears on whichever view is active):
 
 1. **Corner brackets** — 8 lines per object (not full rectangles, less visual clutter)
 2. **Dark text plate** with label: `[ZONE] distance_m` or `class_name [ZONE] distance_m`
@@ -460,12 +465,13 @@ qimage = QImage(frame_rgb.tobytes(), w, h, bytes_per_line, Format_RGB888)
 
 ### 4.2 Signal Emission
 
-The thread emits four signals:
+The thread emits five signals:
 
 1. **`frame_pair_ready(QImage, QImage)`** — RGB and depth images for display
 2. **`distance_info_ready(str, object, str)`** — label, distance, zone for alert panel
 3. **`obstacles_ready(list)`** — fused or raw obstacles for radar view
 4. **`navigation_ready(dict)`** — steering angle, speed, status, gaps for alert panel + radar
+5. **`light_mode_changed(bool)`** — is_dark flag for auto-switch view mode
 
 All signals cross the thread boundary via Qt's **signal-slot mechanism**, which is thread-safe by design. The slot functions run in the main thread.
 
@@ -483,7 +489,7 @@ The main thread catches the emitted signals and distributes the data to the visu
 
 Converts the safe `QImage` into a hardware-accelerated `QPixmap` and renders it. Optimizations:
 - `setScaledContents(True)` called once at init (not per frame)
-- Only updates labels for the currently visible page (RGB / Depth / Overlay)
+- Only updates labels for the currently visible page (RGB / Depth)
 - Handles empty depth maps (webcam mode) via `.isNull()` checks
 
 ### 5.2 AlertPanel (Status Display)
