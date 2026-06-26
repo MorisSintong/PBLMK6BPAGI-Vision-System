@@ -503,9 +503,9 @@ Reads the distance and zone from `distance_info_ready` and updates:
 
 **Optimization:** Stylesheets are only applied when the status **changes** (e.g., SAFE → DANGER). In steady state, zero stylesheet recalculations per frame.
 
-### 5.3 RadarView (180° Spatial Display)
+### 5.3 RadarView (90° FOV Spatial Display)
 
-Renders a top-down semicircular radar showing obstacle positions.
+Renders a top-down 90° FOV wedge radar showing obstacle positions.
 
 **Optimization:** The static background (rings, labels, FOV lines, zone lines) is **pre-rendered once** into a cached `QPixmap`. Only the sweep line and obstacle blips are redrawn each frame. This reduces paint work by ~80%.
 

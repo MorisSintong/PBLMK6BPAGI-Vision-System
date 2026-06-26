@@ -221,7 +221,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 
 ### Tanggung jawab
 - Memperbarui AlertPanel: nama objek, jarak, zona, status bahaya, rekomendasi aksi
-- Integrasi RadarView (180°, data nyata dari pipeline, cached background)
+- Integrasi RadarView (90° FOV, data nyata dari pipeline, cached background)
 - DepthView anotasi: bbox + label + jarak (visible-only updates, auto-switch RGB/Depth)
 - Wiring sinyal dari FrameProcessor ke GUI
 - Maintain stabilitas seluruh widget GUI
@@ -234,7 +234,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 | `GUI/src/depth_view.py` | Display kamera (2 mode: RGB/Depth, auto-switch, visible-only updates) |
 | `GUI/src/controls_panel.py` | Panel kontrol + threshold sliders + Auto/RGB/Depth view mode |
 | `GUI/src/alert_panel.py` | Panel info + alert (cached stylesheets) |
-| `GUI/src/radar_view.py` | Radar 180° (cached background pixmap) |
+| `GUI/src/radar_view.py` | Radar 90° FOV (cached background pixmap) |
 | `GUI/inc/ui_config.py` | Konstanta UI |
 | `GUI/inc/styles.py` | Stylesheet + color constants |
 | `main.py` | Qt bootstrap |

@@ -11,7 +11,7 @@ Aplikasi desktop untuk obstacle avoidance pada security robot:
 - **Sensor fusion** — Depth + YOLO overlap matching with adaptive thresholds and priority matrix
 - **Gap-based navigation** — Polar histogram (VFH-lite) with gap finding, steering output, and speed mapping
 - **Auto-switch view** — Automatically switches between RGB and Depth view based on ambient light (hysteresis: <35 enter dark, >50 exit)
-- **Real-time GUI** — PyQt6 dengan tampilan: Auto/RGB/Depth (auto-switch), Radar 180°, AlertPanel, ControlsPanel
+- **Real-time GUI** — PyQt6 dengan tampilan: Auto/RGB/Depth (auto-switch), Radar 90° FOV, AlertPanel, ControlsPanel
 
 ## Arsitektur
 
@@ -20,7 +20,7 @@ main.py → MainWindow
               ├── DepthView (RGB / Depth, auto-switch by light level)
               ├── ControlsPanel (start/stop, thresholds, Auto/RGB/Depth view mode)
               ├── AlertPanel (object info + zone + action)
-              ├── RadarView (180° semicircle, cached static background)
+              ├── RadarView (90° FOV wedge, cached static background)
               └── CameraThread
                     ├── RealSense acquisition thread (separate thread + queue)
                     └── FrameProcessor (Chain of Responsibility)
@@ -45,7 +45,7 @@ main.py → MainWindow
 | LUT depth colormap | ✅ | Pre-computed 256-entry LUT, ~3x faster than mask approach |
 | Sensor fusion | ✅ | Overlap matching + direct depth sampling + priority matrix |
 | Visual annotation | ✅ | HUD corner brackets, labels, global status bar |
-| Radar view | ✅ | 180° real-time, cached static background pixmap |
+| Radar view | ✅ | 90° FOV wedge real-time, cached static background pixmap |
 | Alert panel | ✅ | Status-change-only stylesheet updates (no redundant recalc) |
 | Threshold controls | ✅ | Adjustable danger/warning distances, propagates to all stages |
 | Lazy depth model | ✅ | Depth model loaded only on first dark frame (saves VRAM) |
@@ -87,7 +87,7 @@ main.py → MainWindow
 │   │   ├── depth_view.py      # Camera display (2 modes: RGB/Depth, visible-only updates)
 │   │   ├── controls_panel.py  # Start/stop + thresholds
 │   │   ├── alert_panel.py     # Object info + alert (cached stylesheets)
-│   │   └── radar_view.py      # 180° radar (cached background pixmap)
+│   │   └── radar_view.py      # 90° FOV radar (cached background pixmap)
 │   └── inc/                   # UI config + styles
 │       ├── ui_config.py       # UI constants + thresholds
 │       └── styles.py          # Global stylesheet + color constants
