@@ -1,36 +1,36 @@
-# Panduan Pengumpulan Data — PBL Vision System
+# Data Collection Guide — PBL Vision System
 
-**Target audiens:** R5 (Hamid) dan asisten AI yang mengerjakan akuisisi dataset.
+**Target audience:** R5 (Hamid) and AI assistants working on dataset acquisition.
 
 ---
 
-## 1. Tujuan
+## 1. Objective
 
-Mengumpulkan dataset gambar RGB berlabel untuk training YOLOv8 guna mendeteksi objek yang relevan dengan robot keamanan:
+Collect a labeled RGB image dataset for training YOLOv8 to detect objects relevant to a security robot:
 - **person** (orang)
 - **motor** (motor/motorcycle)
 - **mobil** (mobil/car)
 
-Kamera depth (Intel RealSense D455) menangkap **pasangan RGB + Depth yang sinkron**, tetapi training YOLO hanya menggunakan **frame RGB**. Frame depth disimpan secara opsional untuk filtering kualitas dan model 3D di masa depan.
+The depth camera (Intel RealSense D455) captures **synchronized RGB + Depth pairs**, but YOLO training only uses the **RGB frames**. Depth frames are saved optionally for quality filtering and future 3D models.
 
-**Persyaratan minimum:** ≥300 frame berlabel di semua class.
+**Minimum requirement:** ≥300 labeled frames across all classes.
 
-**Target performa:** mAP@0.5 ≥ 70% pada validation set.
+**Target performance:** mAP@0.5 ≥ 70% on validation set.
 
 ---
 
-## 2. Setup Hardware
+## 2. Hardware Setup
 
-### 2.1 Peralatan yang Diperlukan
+### 2.1 Required Equipment
 
-| Item | Catatan |
+| Item | Notes |
 |---|---|
-| Intel RealSense D455 | Kamera utama, menyediakan RGB + Depth |
-| Laptop/PC dengan GPU | NVIDIA RTX direkomendasikan, untuk training |
-| Tripod atau dudukan stabil | Mengurangi motion blur |
-| Robot itu sendiri | Untuk tinggi/sudut kamera yang realistis |
+| Intel RealSense D455 | Primary camera, provides RGB + Depth |
+| Laptop/PC with GPU | NVIDIA RTX recommended, for training |
+| Tripod or stable mount | Reduces motion blur |
+| The robot itself | For realistic camera height/angle |
 
-### 2.2 Konfigurasi Kamera
+### 2.2 Camera Configuration
 
 ```
 Resolution:   640 × 480 (RGB + Depth)
@@ -39,87 +39,87 @@ Depth format: Z16 (16-bit unsigned, millimeters)
 Color format: BGR8
 ```
 
-**Tinggi kamera:** Pasang RealSense pada tinggi operasi robot yang diharapkan (~0.5–1.0m dari tanah). Ini memastikan data training sesuai dengan kondisi deployment.
+**Camera height:** Mount the RealSense at the robot's expected operating height (~0.5–1.0m from ground). This ensures training data matches deployment conditions.
 
-### 2.3 Kondisi Lingkungan
+### 2.3 Environment Conditions
 
-Anda HARUS mengumpulkan data dalam **semua** kondisi pencahayaan berikut:
+You MUST collect data under **all** these lighting conditions:
 
-| Kondisi | Deskripsi | Alasan |
+| Condition | Description | Why |
 |---|---|---|
-| Terang siang hari | Outdoor, sinar matahari langsung | Menguji degradasi sensor depth (saturasi IR) |
-| Berawan / teduh | Outdoor, tanpa matahari langsung | Depth bagus, RGB moderat |
-| Lampu fluorescent indoor | Pencahayaan kantor / lorong | Kondisi indoor standar |
-| Redup indoor | Cahaya rendah, sedikit lampu | Menguji degradasi YOLO |
-| Malam hari outdoor | Gelap, hanya lampu jalan | Kasus terburuk untuk YOLO |
-| Malam hari indoor | Ruangan gelap, cahaya minimal | Kasus terburuk untuk YOLO |
+| Bright daylight | Outdoor, direct sunlight | Tests depth sensor degradation (IR saturation) |
+| Overcast / shade | Outdoor, no direct sun | Good depth, moderate RGB |
+| Indoor fluorescent | Office / hallway lighting | Standard indoor condition |
+| Indoor dim | Low light, few lamps | Tests YOLO degradation |
+| Nighttime outdoor | Dark, streetlights only | Worst case for YOLO |
+| Nighttime indoor | Dark room, minimal light | Worst case for YOLO |
 
-**JANGAN mengumpulkan hanya dalam pencahayaan yang baik.** Intinya adalah membuat YOLO robust dalam kondisi buruk.
+**Do NOT collect only in good lighting.** The whole point is to make YOLO robust in poor conditions.
 
 ---
 
-## 3. Prosedur Pengumpulan Data
+## 3. Data Collection Procedure
 
-### 3.1 Langkah demi Langkah
+### 3.1 Step-by-Step
 
-1. **Nyalakan kamera RealSense** (melalui aplikasi Vision System atau RS SDK)
-2. **Posisikan objek target** (orang, motor, atau mobil) di dalam scene
-3. **Tangkap frame** pada jarak berikut untuk setiap objek:
+1. **Start the RealSense camera** (via the Vision System app or RS SDK)
+2. **Position the target object** (person, motor, or car) in the scene
+3. **Capture frames** at the following distances for each object:
 
-| Jarak | Jumlah per class |
+| Distance | Count per class |
 |---|---|
-| 0.5m – 1.0m (dekat) | ≥ 20 frame |
-| 1.0m – 2.0m (sedang) | ≥ 20 frame |
-| 2.0m – 4.0m (jauh) | ≥ 20 frame |
-| > 4.0m (latar belakang) | ≥ 10 frame (sebagai negatif) |
+| 0.5m – 1.0m (close) | ≥ 20 frames |
+| 1.0m – 2.0m (medium) | ≥ 20 frames |
+| 2.0m – 4.0m (far) | ≥ 20 frames |
+| > 4.0m (background) | ≥ 10 frames (as negatives) |
 
-4. **Variasikan posisi:** Pindahkan objek (atau kamera) untuk mencakup semua zona:
-   - Sisi kiri frame
-   - Tengah frame
-   - Sisi kanan frame
-5. **Variasikan sudut:** Tangkap dari orientasi berbeda (depan, samping, belakang)
-6. **Tangkap frame "negatif":** Scene TANPA objek target (ruangan kosong, lorong, parkiran) — ini mengajari YOLO apa yang TIDAK boleh dideteksi
+4. **Vary the position:** Move the object (or camera) to cover all zones:
+   - Left side of frame
+   - Center of frame
+   - Right side of frame
+5. **Vary the angle:** Capture from different orientations (front, side, back)
+6. **Capture "negative" frames:** Scenes with NO target objects (empty room, hallway, parking lot) — these teach YOLO what NOT to detect
 
-### 3.2 Aturan Pemilihan Frame
+### 3.2 Frame Selection Rules
 
-**SIMPAN frame yang:**
-- Tajam (tanpa motion blur)
-- Komposisi baik (objek terlihat penuh, tidak terpotong)
-- Bervariasi (latar belakang, posisi, pencahayaan berbeda)
+**DO save frames that are:**
+- Sharp (no motion blur)
+- Well-composed (object fully visible, not cut off)
+- Varied (different backgrounds, positions, lighting)
 
-**JANGAN SIMPAN frame yang:**
-- Sepenuhnya hitam (lensa tertutup, gelap total)
-- Sepenuhnya putih (overexposed, kerusakan kamera)
-- Motion blur (kamera goyang saat pengambilan)
-- Duplikat (frame berurutan dari scene statis yang sama — pilih yang terbaik)
+**DO NOT save frames that are:**
+- Completely black (lens covered, total darkness)
+- Completely white (overexposed, camera malfunction)
+- Motion blurred (shaky camera during capture)
+- Duplicate (consecutive frames of the same static scene — pick the best one)
 
-### 3.3 Ukuran Dataset Minimum
+### 3.3 Minimum Dataset Size
 
-| Class | Frame Minimum | Direkomendasikan |
+| Class | Minimum Frames | Recommended |
 |---|---|---|
 | person | 100 | 200 |
 | motor | 100 | 200 |
 | mobil | 100 | 200 |
-| Negatif (tanpa objek) | 30 | 50 |
+| Negative (no object) | 30 | 50 |
 | **Total** | **330** | **650** |
 
-**Kualitas lebih penting daripada kuantitas.** 300 frame berlabel yang tajam dan bervariasi > 1000 frame buram dan duplikat.
+**Quality over quantity.** 300 well-labeled diverse frames > 1000 blurry duplicate frames.
 
 ---
 
 ## 4. Labeling
 
-### 4.1 Format Bounding Box (YOLO)
+### 4.1 Bounding Box Format (YOLO)
 
-Setiap frame mendapat file label `.txt` yang sesuai. Format:
+Each frame gets a corresponding `.txt` label file. Format:
 
 ```
 class_id  x_center  y_center  width  height
 ```
 
-Semua nilai **ternormalisasi** (0.0 – 1.0) relatif terhadap dimensi gambar.
+All values are **normalized** (0.0 – 1.0) relative to image dimensions.
 
-**Contoh:** Seorang person pada bounding box `[120, 80, 200, 300]` dalam gambar 640×480:
+**Example:** A person at bounding box `[120, 80, 200, 300]` in a 640×480 image:
 
 ```
 x_center = (120 + 200/2) / 640 = 0.25
@@ -128,12 +128,12 @@ width    = 200 / 640 = 0.3125
 height   = 300 / 480 = 0.625
 ```
 
-File label `frame_0001.txt`:
+Label file `frame_0001.txt`:
 ```
 0 0.25 0.417 0.3125 0.625
 ```
 
-### 4.2 Pemetaan Class
+### 4.2 Class Mapping
 
 | class_id | class_name |
 |---|---|
@@ -141,20 +141,20 @@ File label `frame_0001.txt`:
 | 1 | motor |
 | 2 | person |
 
-### 4.3 Tools Labeling
+### 4.3 Labeling Tools
 
-Gunakan salah satu tools berikut:
+Use one of these tools:
 
-| Tool | Tipe | Direkomendasikan |
+| Tool | Type | Recommended |
 |---|---|---|
-| [Roboflow](https://roboflow.com) | Berbasis web | ✅ Ya — auto-labeling + ekspor ke format YOLO |
-| [CVAT](https://cvat.ai) | Web/self-hosted | ✅ Ya — kelas profesional |
-| [LabelImg](https://github.com/heartexlabs/labelImg) | Desktop | OK — sederhana, ringan |
-| [Python script + YOLO auto-label](#44-auto-labeling-with-yolo) | Otomatis | ✅ Ya — tercepat untuk dataset besar |
+| [Roboflow](https://roboflow.com) | Web-based | ✅ Yes — auto-labeling + export to YOLO format |
+| [CVAT](https://cvat.ai) | Web/self-hosted | ✅ Yes — professional-grade |
+| [LabelImg](https://github.com/heartexlabs/labelImg) | Desktop | OK — simple, lightweight |
+| [Python script + YOLO auto-label](#44-auto-labeling-with-yolo) | Automated | ✅ Yes — fastest for large datasets |
 
-### 4.4 Auto-Labeling dengan YOLO
+### 4.4 Auto-Labeling with YOLO
 
-Gunakan model YOLOv8n yang sudah ter-trained untuk auto-label frame, lalu tinjau oleh manusia:
+Use the pre-trained YOLOv8n model to auto-label frames, then human-review:
 
 ```python
 from ultralytics import YOLO
@@ -171,29 +171,29 @@ results = model.predict(
 )
 ```
 
-Ini otomatis menghasilkan file label `.txt`. **Tinjauan manusia tetap diperlukan** untuk:
-- Memperbaiki objek yang salah klasifikasi (mis., "motorcycle" → "motor")
-- Menghapus false positive
-- Menambahkan deteksi yang terlewat
-- Memverifikasi pemetaan class sesuai 3 class kita
+This auto-generates `.txt` label files. **Human review is still required** to:
+- Fix misclassified objects (e.g., "motorcycle" → "motor")
+- Remove false positives
+- Add missing detections
+- Verify class mapping matches our 3 classes
 
-### 4.5 Checklist Kualitas Labeling
+### 4.5 Labeling Quality Checklist
 
-Sebelum menyelesaikan dataset, verifikasi:
+Before finalizing the dataset, verify:
 
-- [ ] Setiap frame memiliki file label `.txt` yang cocok
-- [ ] Tidak ada file label kosong (setiap file minimal memiliki satu anotasi)
-- [ ] Bounding box pas di sekitar objek (tidak terlalu longgar, tidak terlalu ketat)
-- [ ] Class ID sesuai pemetaan (0=mobil, 1=motor, 2=person)
-- [ ] Tidak ada label duplikat pada objek yang sama
-- [ ] Objek yang terhalang diberi label (meskipun hanya sebagian terlihat)
-- [ ] Objek di tepi frame diberi label (meskipun sebagian terpotong)
+- [ ] Every frame has a matching `.txt` label file
+- [ ] No empty label files (every file has at least one annotation)
+- [ ] Bounding boxes are tight around the object (not too loose, not too tight)
+- [ ] Class IDs match the mapping (0=mobil, 1=motor, 2=person)
+- [ ] No duplicate labels on the same object
+- [ ] Occluded objects are labeled (even if partially visible)
+- [ ] Objects at the edge of frame are labeled (even if partially cut off)
 
 ---
 
-## 5. Organisasi Dataset
+## 5. Dataset Organization
 
-### 5.1 Struktur Folder
+### 5.1 Folder Structure
 
 ```
 dataset/
@@ -219,14 +219,14 @@ dataset/
     └── ...
 ```
 
-### 5.2 Split Train/Val
+### 5.2 Train/Val Split
 
-- **80% train** — digunakan untuk training model
-- **20% val** — digunakan untuk evaluasi selama training (data yang belum dilihat)
+- **80% train** — used to train the model
+- **20% val** — used to evaluate during training (unseen data)
 
-**Penting:** Split berdasarkan **scene**, bukan per frame. Jika Anda menangkap 50 frame orang yang sama di lokasi yang sama, letakkan 40 di train dan 10 di val. JANGAN letakkan 50 di train dan 0 di val — ini menyebabkan data leakage (model menghafal scene, tidak generalisasi).
+**Important:** Split by **scene**, not by frame. If you capture 50 frames of the same person in the same location, put 40 in train and 10 in val. Do NOT put 50 in train and 0 in val — this causes data leakage (model memorizes the scene, doesn't generalize).
 
-### 5.3 Konfigurasi `data.yaml`
+### 5.3 `data.yaml` Configuration
 
 ```yaml
 # Dataset config for YOLOv8 training
@@ -245,17 +245,17 @@ nc: 3  # Number of classes
 
 ---
 
-## 6. Data Depth (Opsional tapi Direkomendasikan)
+## 6. Depth Data (Optional but Recommended)
 
-### 6.1 Mengapa Menyimpan Depth?
+### 6.1 Why Save Depth?
 
-1. **Filtering kualitas:** Periksa apakah objek berada pada jarak yang valid
-2. **Model masa depan:** Training deteksi yang sadar depth (3D bounding box)
-3. **Validasi:** Verifikasi akurasi bounding box menggunakan konsistensi depth
+1. **Quality filtering:** Check if objects are at valid distances
+2. **Future models:** Train depth-aware detection (3D bounding boxes)
+3. **Validation:** Verify bounding box accuracy using depth consistency
 
-### 6.2 Cara Menyimpan Depth
+### 6.2 How to Save Depth
 
-Simpan depth sebagai file `.npy` (NumPy array):
+Save depth as `.npy` files (NumPy arrays):
 
 ```python
 import numpy as np
@@ -265,9 +265,9 @@ depth_raw = np.asanyarray(depth_frame.get_data())  # uint16, millimeters
 np.save(f"dataset/depth/{frame_name}.npy", depth_raw)
 ```
 
-### 6.3 Pemeriksaan Kualitas Depth
+### 6.3 Depth Quality Check
 
-Sebelum menyimpan frame, verifikasi kualitas depth:
+Before saving a frame, verify depth quality:
 
 ```python
 valid_pixels = np.count_nonzero(depth_raw)
@@ -283,7 +283,7 @@ if valid_ratio < 0.3:
 
 ## 7. Training
 
-### 7.1 Perintah Training
+### 7.1 Training Command
 
 ```python
 from ultralytics import YOLO
@@ -304,32 +304,32 @@ results = model.train(
 )
 ```
 
-### 7.2 Target Training
+### 7.2 Training Targets
 
-| Metrik | Target | Cara cek |
+| Metric | Target | How to check |
 |---|---|---|
 | mAP@0.5 | ≥ 70% | `results.csv` → `metrics/mAP50(B)` |
 | Precision | ≥ 60% | `results.csv` → `metrics/precision(B)` |
 | Recall | ≥ 60% | `results.csv` → `metrics/recall(B)` |
-| Training loss | Menurun | `results.csv` → `train/box_loss` |
+| Training loss | Decreasing | `results.csv` → `train/box_loss` |
 
-### 7.3 Tanda Overfitting
+### 7.3 Overfitting Signs
 
-Jika val loss meningkat sementara train loss menurun → **overfitting**:
-- Model menghafal data training, tidak generalisasi
-- **Solusi:** Tambah data, data augmentation, kurangi epochs, gunakan early stopping
+If val loss increases while train loss decreases → **overfitting**:
+- Model memorized training data, doesn't generalize
+- **Fix:** More data, data augmentation, reduce epochs, use early stopping
 
-### 7.4 Tanda Underfitting
+### 7.4 Underfitting Signs
 
-Jika train dan val loss keduanya tinggi → **underfitting**:
-- Model belum belajar cukup
-- **Solusi:** Tambah epochs, model lebih besar (yolov8s/m), tambah data
+If both train and val loss are high → **underfitting**:
+- Model hasn't learned enough
+- **Fix:** More epochs, larger model (yolov8s/m), more data
 
 ---
 
-## 8. Evaluasi
+## 8. Evaluation
 
-### 8.1 Jalankan Validation
+### 8.1 Run Validation
 
 ```python
 from ultralytics import YOLO
@@ -348,16 +348,16 @@ print(f"Precision:  {metrics.box.mp:.2%}")
 print(f"Recall:     {metrics.box.mr:.2%}")
 ```
 
-### 8.2 Performa Per-Class
+### 8.2 Per-Class Performance
 
-Periksa setiap class secara individual:
+Check each class individually:
 
 ```python
 for i, class_name in enumerate(["mobil", "motor", "person"]):
     print(f"{class_name}: AP@0.5 = {metrics.box.ap50[i]:.2%}")
 ```
 
-Jika satu class jauh lebih buruk, kumpulkan lebih banyak data untuk class tersebut.
+If one class is significantly worse, collect more data for that class.
 
 ### 8.3 Confusion Matrix
 
@@ -366,45 +366,45 @@ model.val(data="dataset/data.yaml", plots=True, imgsz=320)
 # Generates confusion_matrix.png in runs/val/
 ```
 
-Perhatikan:
-- **False positive:** Model mendeteksi objek padahal tidak ada
-- **False negative:** Model melewatkan objek nyata
-- **Class confusion:** Model bingung antara person dengan motor, dll.
+Look for:
+- **False positives:** Model detects object where none exists
+- **False negatives:** Model misses real objects
+- **Class confusion:** Model confuses person with motor, etc.
 
 ---
 
-## 9. Kesalahan Umum
+## 9. Common Pitfalls
 
-| Kesalahan | Mengapa buruk | Cara menghindari |
+| Pitfall | Why it's bad | How to avoid |
 |---|---|---|
-| Semua frame dari lokasi yang sama | Model tidak generalisasi ke environment baru | Kumpulkan dari 5+ lokasi berbeda |
-| Semua frame dalam pencahayaan baik | Model gagal di malam hari | Kumpulkan dalam SEMUA kondisi pencahayaan |
-| Hanya objek dari tampilan depan | Model tidak bisa mendeteksi tampilan samping/belakang | Putar objek atau kamera |
-| Frame berurutan yang duplikat | Pemborosan tenaga, menggembungkan ukuran dataset | Pilih frame terbaik per scene, lewati duplikat |
-| Bounding box longgar | Model belajar batas objek yang salah | Label pas di sekitar objek yang terlihat |
-| Class imbalance (200 person, 20 motor) | Model bias ke class mayoritas | Seimbangkan: frame per class kira-kira sama |
-| Tidak ada frame negatif | Model mendeteksi objek di mana-mana | Sertakan 10% scene kosong |
+| All frames from same location | Model doesn't generalize to new environments | Collect from 5+ different locations |
+| All frames in good lighting | Model fails at night | Collect in ALL lighting conditions |
+| Only front-view objects | Model can't detect side/back views | Rotate object or camera |
+| Duplicate consecutive frames | Wasted effort, inflates dataset size | Pick best frame per scene, skip duplicates |
+| Loose bounding boxes | Model learns wrong object boundaries | Label tightly around visible object |
+| Class imbalance (200 person, 20 motor) | Model biased toward majority class | Balance: roughly equal frames per class |
+| No negative frames | Model detects objects everywhere | Include 10% empty scenes |
 
 ---
 
-## 10. Checklist Deliverable
+## 10. Deliverables Checklist
 
-Sebelum diserahkan ke R2 (Husein) untuk training:
+Before handing off to R2 (Husein) for training:
 
-- [ ] ≥300 frame RGB berlabel (direkomendasikan: 650+)
-- [ ] Seimbang antar 3 class (±20% per class)
-- [ ] Seimbang antar kondisi pencahayaan (siang/malam/indoor/outdoor)
-- [ ] Seimbang antar jarak (0.5–1m, 1–2m, 2–4m)
-- [ ] Split train/val 80/20 (per scene, bukan per frame)
-- [ ] File label `.txt` format YOLO
-- [ ] File config `data.yaml`
+- [ ] ≥300 labeled RGB frames (recommended: 650+)
+- [ ] Balanced across 3 classes (±20% per class)
+- [ ] Balanced across lighting conditions (day/night/indoor/outdoor)
+- [ ] Balanced across distances (0.5–1m, 1–2m, 2–4m)
+- [ ] 80/20 train/val split (by scene, not by frame)
+- [ ] YOLO-format `.txt` label files
+- [ ] `data.yaml` config file
 - [ ] Validation mAP@0.5 ≥ 70%
-- [ ] Confusion matrix ditinjau untuk class confusion
-- [ ] Frame depth disimpan (opsional tapi direkomendasikan)
+- [ ] Confusion matrix reviewed for class confusion
+- [ ] Depth frames saved (optional but recommended)
 
 ---
 
-## 11. Referensi: Template Script Pengumpulan Data
+## 11. Reference: Data Collection Script Template
 
 ```python
 """
@@ -496,13 +496,13 @@ finally:
     print(f"\nDone. {frame_count} frames saved to {OUTPUT_DIR}/")
 ```
 
-**Penggunaan:**
-1. Jalankan script: `python collect_data.py`
-2. Arahkan kamera ke objek target
-3. Tekan SPACE untuk menangkap (satu frame setiap 0.5s)
-4. Tekan ESC untuk keluar
-5. Label frame yang ditangkap dengan Roboflow/CVAT/LabelImg
-6. Ekspor dalam format YOLO
-7. Split menjadi train/val (80/20)
-8. Training YOLOv8
-9. Evaluasi dan iterasi
+**Usage:**
+1. Run the script: `python collect_data.py`
+2. Point camera at target objects
+3. Press SPACE to capture (one frame every 0.5s)
+4. Press ESC to quit
+5. Label the captured frames with Roboflow/CVAT/LabelImg
+6. Export in YOLO format
+7. Split into train/val (80/20)
+8. Train YOLOv8
+9. Evaluate and iterate

@@ -62,7 +62,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 ---
 
-## Ringkasan Completion Per Role
+## Role Completion Summary
 
 | Role | Completed | Remaining | % Complete |
 |------|-----------|-----------|------------|
@@ -104,7 +104,7 @@ main.py → MainWindow
                                 └── VisualAnnotationStage (HUD + steering arrow, in-place)
 ```
 
-## Alur Data
+## Data Flow
 
 ```
 CameraThread (acquisition thread)
@@ -147,7 +147,7 @@ CameraThread (acquisition thread)
                                              └── light_mode_changed → ControlsPanel (auto-switch)
 ```
 
-## Optimasi Performa
+## Performance Optimizations
 
 | Optimization | File | Impact |
 |---|---|---|
@@ -166,7 +166,7 @@ CameraThread (acquisition thread)
 | Visible-only label updates | depth_view.py | 2 fewer pixmap sets/frame |
 | Lazy depth model loading | frame_processor.py | Faster startup, less VRAM |
 
-## Cakupan Test
+## Test Coverage
 
 | Test File | Tests | Coverage |
 |---|---|---|
@@ -175,7 +175,7 @@ CameraThread (acquisition thread)
 | `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache (cached + shape change), thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
 | **Total** | **147** | All pass in ~24s |
 
-## Hasil Benchmark (RTX A4000 Laptop GPU, FP16, 320px)
+## Benchmark Results (RTX A4000 Laptop GPU, FP16, 320px)
 
 | Criterion | Target | Result | Status |
 |---|---|---|---|
@@ -197,7 +197,7 @@ CameraThread (acquisition thread)
 | R5: Per-stage latency harness | All stages | 5 stages measured | PASS |
 | **Total** | | **17/17 PASS** | |
 
-## Gap yang Diketahui
+## Known Gaps
 
 | Gap | Detail |
 |---|---|
@@ -209,7 +209,7 @@ CameraThread (acquisition thread)
 | R5: Regression test otomatis | Automated regression test not yet built |
 | Model weights belum di repo | `ModelRGB_V4.2.pt` dan `ModelDepth_V4.pt` di `.gitignore` |
 
-## Riwayat Merge
+## Merge History
 
 | Branch | Role | Status |
 |---|---|---|
