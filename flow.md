@@ -120,7 +120,7 @@ Stage ini mengkonversi data depth mentah menjadi informasi obstacle terstruktur 
 
 #### 3.2.1 Generasi Colormap Berbasis LUT
 
-Alih-alih membuat beberapa boolean mask per frame (lambat), stage ini menggunakan **Lookup Table (LUT) pre-computed 256-entry** yang memetakan indeks depth ke warna BGR:
+Daripada membuat beberapa boolean mask per frame (lambat), stage ini menggunakan **Lookup Table (LUT) pre-computed 256-entry** yang memetakan indeks depth ke warna BGR:
 
 ```python
 # Build sekali saat init (dan rebuild saat threshold berubah)
@@ -305,7 +305,7 @@ for obs in data.obstacles:
 
 #### 3.4.2 Direct Depth Sampling
 
-Alih-alih mencocokkan box YOLO ke contour obstacle depth, PASS 1 menyampling depth **langsung dari depth frame** di dalam bbox YOLO:
+Daripada mencocokkan box YOLO ke contour obstacle depth, PASS 1 menyampling depth **langsung dari depth frame** di dalam bbox YOLO:
 
 ```python
 def _sample_depth_in_bbox(depth_frame, depth_scale, bbox):
