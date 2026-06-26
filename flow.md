@@ -142,6 +142,14 @@ idx = np.clip(depth_m * scale, 0, 255).astype(np.uint8)
 colormap = self._depth_lut[idx]
 ```
 
+**Formula LUT scale:**
+
+```
+scale = 255.0 / max_distance
+```
+
+Setiap nilai depth dalam meter dikalikan dengan `scale` untuk dipetakan ke indeks 0–255. Misalnya, `max_distance = 5.0m` menghasilkan `scale = 51.0`, sehingga depth 2.5m → indeks 127 (kuning/warning zone). Nilai di luar `[0, max_distance]` di-clip ke 0 atau 255, yang sudah dipetakan ke hitam (invalid) di LUT.
+
 LUT dibangun ulang setiap kali threshold berubah via `set_action_thresholds()` atau `set_thresholds()`.
 
 Dua colormap dihasilkan:
@@ -158,6 +166,18 @@ Stage ini menggunakan `ObstacleDetector` untuk mencari obstacle pada frame depth
 4. Mencari contour dan memfilter berdasarkan area
 5. Menghitung jarak menggunakan percentile ke-5 (permukaan terdekat)
 6. Mengembalikan obstacle **tanpa copy atau memodifikasi color frame**
+
+**Kenapa percentile ke-5?** Stage ini menggunakan `np.percentile(valid_depth, 5)` — yaitu nilai di mana 5% pixel terdekat berada di bawahnya. Ini memberikan estimasi jarak ke **permukaan terdekat** obstacle (apa yang penting untuk collision avoidance), tetapi lebih robust terhadap noise daripada `np.min()` yang bisa terpengaruh satu pixel outlier.
+
+**Perbandingan percentile di seluruh pipeline:**
+
+| Stage | Percentile | Alasan |
+|-------|-----------|--------|
+| ObstacleDetector (depth) | 5th | Permukaan terdekat obstacle — paling agresif (safety-critical) |
+| FusionStage (direct sampling) | 25th | Stabil terhadap noise edge bbox, tetapi masih merepresentasikan bagian depan objek |
+| NavigationStage (polar histogram) | 10th | Kompromi antara min dan median — robust untuk steering per sektor |
+
+Logikanya: obstacle detection butuh konservatif (5th, terdekat), fusion butuh akurat di bbox YOLO (25th, lebih stabil), dan navigation butuh kompromi per sektor (10th, tidak terlalu sensitif terhadap satu pixel noise).
 
 #### 3.2.3 Penempatan Zone
 
@@ -386,21 +406,40 @@ blocked[i] = histogram[i] < min_gap
 
 #### 3.5.3 Pencarian Gap
 
-Sektor bebas yang berdekatan membentuk **gap**. Setiap gap diberi skor:
+Sektor bebas yang berdekatan membentuk **gap**. Untuk setiap gap, indeks sektor pusat dikonversi ke sudut:
+
+```
+angle_per_sector = (2 × max_steer_deg) / num_sectors
+center_angle = -max_steer_deg + center_sector × angle_per_sector
+```
+
+Dengan `max_steer_deg = 45°` dan `num_sectors = 18`:
+- `angle_per_sector = 90 / 18 = 5°` per sektor
+- Sektor 0 (paling kiri) → `center_angle = -45°` (belok kiri maksimal)
+- Sektor 9 (tengah) → `center_angle = 0°` (lurus)
+- Sektor 17 (paling kanan) → `center_angle = +45°` (belok kanan maksimal)
+
+Setiap gap diberi skor:
 
 ```
 score = 0.5 × center_bias + 0.3 × width_score + 0.2 × clearance_score
 ```
 
-- `center_bias` — lebih suka gap dekat pusat (0°), penalti sudut ekstrem
-- `width_score` — gap yang lebih lebar lebih aman
-- `clearance_score` — gap yang lebih dalam memungkinkan perjalanan lebih cepat
+- `center_bias = 1.0 - (|center_angle| / max_steer_deg)` — lebih suka gap dekat pusat (0°), penalti sudut ekstrem
+- `width_score = width_sectors / num_sectors` — gap yang lebih lebar lebih aman
+- `clearance_score = min(min_distance / max_distance, 1.0)` — gap yang lebih dalam memungkinkan perjalanan lebih cepat
 
 Sudut pusat gap dengan skor tertinggi menjadi sudut steering yang direkomendasikan.
 
 #### 3.5.4 Hysteresis (Anti-Oscillation)
 
-Untuk mencegah steering berpindah kiri/kanan setiap frame, stage ini tetap pada heading sebelumnya selama N frame (default: 5) jika masih dalam gap bebas.
+Untuk mencegah steering berpindah kiri/kanan setiap frame, stage ini tetap pada heading sebelumnya selama N frame (default: 5) jika masih dalam gap bebas. Pengecekan dilakukan dengan mengkonversi sudut steering sebelumnya kembali ke indeks sektor:
+
+```
+prev_sector = int((prev_angle + max_steer_deg) / angle_per_sector)
+```
+
+Jika `prev_sector` valid (dalam rentang `[0, num_sectors)`) dan sektor tersebut tidak blocked, maka steering sebelumnya dipertahankan. Jika tidak, gap terbaik baru dipilih dan counter hysteresis direset ke N.
 
 #### 3.5.5 Safety Override
 
@@ -408,13 +447,23 @@ Jika FusionStage menemukan person pada priority 0 (di danger zone), navigation m
 
 #### 3.5.6 Mapping Kecepatan
 
-Kecepatan naik secara linear berdasarkan jarak minimum pada sektor tengah:
+Kecepatan dihitung berdasarkan jarak minimum pada **sektor tengah** frame (sepertiga bagian tengah dari histogram):
+
+```
+center_start = num_sectors // 3
+center_end = 2 × num_sectors // 3
+min_dist_ahead = min(histogram[center_start:center_end])
+```
+
+Dengan `num_sectors = 18`: sektor 6–11 (sepertiga tengah) merepresentasikan area langsung di depan robot. Kecepatan naik secara linear berdasarkan `min_dist_ahead`:
 
 ```
 if min_dist < danger_distance:    speed = 0.0 (stop)
 if min_dist >= warning_distance:  speed = 1.0 (full)
 else:                             speed = (min_dist - danger) / (warning - danger)
 ```
+
+**Kenapa sepertiga tengah?** Sektor tepi (kiri/kanan ekstrem) bisa terhalang oleh dinding atau obstacle di samping yang tidak menghalangi jalur lurus robot. Hanya area di depan langsung yang menentukan apakah robot harus melambat.
 
 #### 3.5.7 Format Output
 
@@ -439,6 +488,19 @@ Stage terakhir menggambar overlay HUD ke `rgb_frame` dan `depth_colormap` **in-p
 4. **Global status bar** (kiri-atas): `SYS: SAFE` / `SYS: WARN` / `SYS: DANGER`
 5. **Navigation HUD** (kiri-bawah): `NAV: AVOIDING | STEER +22 deg | SPD 50%`
 6. **Steering arrow** (tengah-bawah): panah berarah yang menunjukkan heading yang direkomendasikan
+
+**Formula steering arrow pada frame:**
+
+```
+cx = frame_width / 2
+cy = frame_height - 40
+arrow_len = 60
+angle_rad = radians(steering_angle_deg)
+ax = cx + arrow_len × sin(angle_rad)
+ay = cy - arrow_len × cos(angle_rad)
+```
+
+Sudut 0° menghasilkan panah lurus ke atas. Sudut +22° (belok kanan) menggeser ujung panah ke kanan dengan `sin(22°) ≈ 0.37`, sehingga `ax = cx + 22`. Sudut negatif (belok kiri) menggeser ke kiri. Komponen `cos` mengontrol panjang vertikal panah — pada 0°, panah penuh 60px ke atas; pada ±45°, panah lebih pendek secara vertikal (`cos(45°) ≈ 0.71`) dan lebih panjang secara horizontal.
 
 Prioritas sumber data:
 1. `fused_output` (dari FusionStage) — bbox dalam format xyxy
@@ -528,6 +590,20 @@ dist_frac = min(distance_m / RADAR_MAX_DEPTH, 1.0)
 bx = cx + dist_frac × r × cos(angle_deg)
 by = cy - dist_frac × r × sin(angle_deg)
 ```
+
+#### 5.3.3 Steering Arrow pada Radar
+
+Panah rekomendasi steering dari NavigationStage juga ditampilkan pada radar. Sudut steering (-45° hingga +45°) dipetakan ke sudut radar:
+
+```
+radar_angle = 90 - steering_angle_deg
+```
+
+- `steering = 0°` (lurus) → `radar_angle = 90°` (panah ke atas pada radar)
+- `steering = -45°` (belok kiri) → `radar_angle = 135°` (panah ke kiri radar)
+- `steering = +45°` (belok kanan) → `radar_angle = 45°` (panah ke kanan radar)
+
+Panjang panah = `0.7 × r` (70% radius radar). Warna panah mengikuti status: merah (STOPPED/BLOCKED), oranye (AVOIDING), hijau (CLEAR).
 
 ---
 
