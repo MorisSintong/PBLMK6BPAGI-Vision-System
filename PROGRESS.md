@@ -1,16 +1,16 @@
 # Progress Report — Vision System for Security Robot
 
-> Last updated: 26 Juni 2026
+> Last updated: 26 June 2026
 
 ---
 
 ## Overview
 
-Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, dan 147 tests.
+This project builds an obstacle avoidance system based on depth camera (Intel RealSense D455) + machine vision (YOLOv8) for a security robot. The system has reached a production-ready phase with a 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, and 147 tests.
 
 ---
 
-## Status Terkini
+## Current Status
 
 ### ✅ Completed
 
@@ -18,9 +18,9 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 |---|---|---|
 | `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 5 stages: DepthProcessing, YOLODetection, Fusion, Navigation, VisualAnnotation. 147/147 tests pass |
 | Pipeline → CameraThread integration | R1 | Separate acquisition thread + queue(maxsize=2). Camera capture decoupled from processing |
-| Depth filters (preprocessing) | R3 (Long) | Decimation (configurable) → spatial → temporal → hole-filling di CameraThread via pyrealsense2 SDK |
+| Depth filters (preprocessing) | R3 (Long) | Decimation (configurable) → spatial → temporal → hole-filling in CameraThread via pyrealsense2 SDK |
 | Unfiltered depth capture | R1 | `depth_frame_raw` captured BEFORE RS filters for depth model inference |
-| Multi-zone obstacle detection | R3 | LEFT / CENTER / RIGHT zone. LUT-based colormap (merah/kuning/hijau). Structured output |
+| Multi-zone obstacle detection | R3 | LEFT / CENTER / RIGHT zone. LUT-based colormap (red/yellow/green). Structured output |
 | `ObstacleDetector` optimization | R1 | No frame copy (returns same object), no zone tick drawing, reusable float32 buffer |
 | LUT depth colormap | R1 | Pre-computed 256-entry LUT, ~3x faster than mask approach. Rebuilds on threshold change |
 | `YOLOWrapper` optimization | R1/R2 | FP16 inference (auto-detected), GPU warm-up, input_size=320, batch tensor transfer |
@@ -57,7 +57,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Outdoor testing (sunlight) | R3 (Long) | ⏳ Needs outdoor field test |
 | 30-min streaming stability | R6 (Adel) | ⏳ Run `python main.py` for 30 min |
 | Display latency ≤50ms | R6 | ⏳ Needs GUI + hardware (pipeline P95=30ms) |
-| Regression test otomatis | R5 | ⏳ Not started |
+| Automated regression test | R5 | ⏳ Not started |
 | Full pipeline test with real hardware | R1 | ⏳ Pending — all software tests pass |
 
 ---
@@ -65,7 +65,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 ## Role Completion Summary
 
 | Role | Completed | Remaining | % Complete |
-|------|-----------|-----------|------------|
+|---|---|---|---|
 | R1 (Moris) — ML Pipeline | 28 items | 1 (hardware test) | 97% |
 | R2 (Husein) — YOLOv8 | 7 items | 1 (light stability outdoor) | 88% |
 | R3 (Long) — Depth | 5 items | 2 (noise reduction on HW, outdoor test) | 71% |
@@ -75,11 +75,11 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 ---
 
-## Arsitektur Saat Ini
+## Current Architecture
 
 ```
 main.py → MainWindow
-              ├── DepthView (2 mode: RGB / Depth, visible-only updates, auto-switch by light)
+              ├── DepthView (2 modes: RGB / Depth, visible-only updates, auto-switch by light)
               ├── ControlsPanel (start/stop, thresholds, Auto/RGB/Depth view mode)
               ├── AlertPanel (object info + zone + action, cached stylesheets)
               ├── RadarView (90° FOV wedge, cached static background)
@@ -186,11 +186,11 @@ CameraThread (acquisition thread)
 | R2: mAP@0.5 (Depth model) | >=70% | 87.23% (R5 report) | PASS |
 | R2: Dark mode + CLAHE | Hysteresis: <35 enter, >50 exit | All 10 levels correct | PASS |
 | R3: Colormap zones | red/yellow/green/black | All 4 correct | PASS |
-| R3: Obstacle accuracy 0.3-5m | +-10% | Max error 0.2% | PASS |
+| R3: Obstacle accuracy 0.3-5m | ±10% | Max error 0.2% | PASS |
 | R3: 3 zones | left/center/right | All correct | PASS |
 | R3: Noise reduction (synthetic) | Morphological filtering | 0.1% error with 15% noise | PASS |
 | R4: Fusion priority matrix | 5 test cases | 5/5 correct | PASS |
-| R4: Distance accuracy | +-10% | Max error 0.2% | PASS |
+| R4: Distance accuracy | ±10% | Max error 0.2% | PASS |
 | R5: Dataset >=300 frames | >=300 | RGB: 2668, Depth: 2471 | PASS |
 | R5: Dataset >=3 classes | >=3 | mobil, motor, person | PASS |
 | R5: E2E latency P95 | <=100 ms | 30.50 ms | PASS |
@@ -201,13 +201,13 @@ CameraThread (acquisition thread)
 
 | Gap | Detail |
 |---|---|
-| R2: Light stability outdoor | Needs same scene tested under bright vs dim vs night (<=15% degradation) |
+| R2: Light stability outdoor | Needs same scene tested under bright vs dim vs night (≤15% degradation) |
 | R3: Depth noise on hardware | Needs real RealSense + flat wall to measure 30% reduction |
-| R3: Outdoor sunlight test | RealSense D455 terganggu sinar matahari langsung |
+| R3: Outdoor sunlight test | RealSense D455 affected by direct sunlight |
 | R6: 30-min streaming stability | Run `python main.py` for 30 min, watch for crashes/memory growth |
-| R6: Display latency <=50ms | Needs GUI + hardware (pipeline P95 is 30ms, should pass) |
-| R5: Regression test otomatis | Automated regression test not yet built |
-| Model weights belum di repo | `ModelRGB_V4.2.pt` dan `ModelDepth_V4.pt` di `.gitignore` |
+| R6: Display latency ≤50ms | Needs GUI + hardware (pipeline P95 is 30ms, should pass) |
+| R5: Automated regression test | Automated regression test not yet built |
+| Model weights not in repo | `ModelRGB_V4.2.pt` and `ModelDepth_V4.pt` in `.gitignore` |
 
 ## Merge History
 

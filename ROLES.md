@@ -1,62 +1,62 @@
 # Team Roles & Responsibilities
 
-> AI Agent: Baca dokumen ini untuk memahami peran kamu. Kerjakan sesuai sasaran dan kriteria keberhasilan. Koordinasikan dengan role terkait sesuai tabel hubungan.
+> AI Agent: Read this document to understand your role. Work according to the goals and success criteria. Coordinate with related roles as per the relationship table.
 
 ---
 
 ## Role 1 — ML Pipeline Architect / Frame Processor Lead
-**Orang:** Moris
+**Person:** Moris
 
-### Tanggung jawab
-- Merancang dan mengimplementasikan pipeline vision end-to-end (5 stages)
-- Mendefinisikan kontrak data antar stage
-- Mengorkestrasi aliran data: Raw Frame → Depth → YOLO → Fusion → Navigation → Annotation → Output
-- Code review untuk semua PR dari Role 2-6
+### Responsibilities
+- Design and implement the end-to-end vision pipeline (5 stages)
+- Define data contracts between stages
+- Orchestrate data flow: Raw Frame → Depth → YOLO → Fusion → Navigation → Annotation → Output
+- Code review for all PRs from Roles 2-6
 - Performance optimization (FP16, LUT, lazy loading, buffer reuse)
 
-### File
-| File | Keterangan |
+### Files
+| File | Description |
 |---|---|
-| `Vision/src/frame_processor.py` | Pipeline utama (5 stage: Depth, YOLO, Fusion, Navigation, Annotation) |
-| `Vision/src/camera_thread.py` | Integrasi pipeline + acquisition thread |
+| `Vision/src/frame_processor.py` | Main pipeline (5 stages: Depth, YOLO, Fusion, Navigation, Annotation) |
+| `Vision/src/camera_thread.py` | Pipeline integration + acquisition thread |
 | `Vision/src/yolowrapper.py` | YOLOv8 wrapper (FP16, warm-up, batch transfer) |
-| `Vision/inc/detection_config.py` | Konfigurasi terpusat |
-| `Vision/inc/camera_config.py` | Konfigurasi kamera (RealSense + webcam) |
-| `main.py` | Inisialisasi FrameProcessor |
+| `Vision/inc/detection_config.py` | Centralized configuration |
+| `Vision/inc/camera_config.py` | Camera configuration (RealSense + webcam) |
+| `main.py` | FrameProcessor initialization |
 
-### Selesai bila
-- `frame_processor.py` menerima frame dari CameraThread, menjalankan semua 5 stage, mengembalikan frame teranotasi
+### Done when
+- `frame_processor.py` receives frames from CameraThread, runs all 5 stages, returns annotated frames
 - Pipeline ≥25 FPS (RealSense) / ≥30 FPS (webcam)
-- Semua kontrak antar stage didokumentasikan dan disetujui tim
-- Semua file konfigurasi dikelola sebagai single source of truth
+- All stage contracts documented and approved by team
+- All config files managed as single source of truth
 - 147/147 tests pass
 
 ---
 
 ## Role 2 — YOLOv8 Object Detection Specialist
-**Orang:** Husein
+**Person:** Husein
 
-### Tanggung jawab
-- Membangun `YOLOWrapper` class untuk model loading, inference, class mapping
-- Fine-tuning YOLOv8 dengan dataset dari Role 5
-- Optimasi inference (ONNX, TensorRT, reduced input size)
-- Output per frame: `List[Detection]` (dataclass) dengan format `{bbox, class_id, class_name, confidence}`
+### Responsibilities
+- Build `YOLOWrapper` class for model loading, inference, class mapping
+- Fine-tune YOLOv8 with dataset from Role 5
+- Inference optimization (ONNX, TensorRT, reduced input size)
+- Per-frame output: `List[Detection]` (dataclass) in `{bbox, class_id, class_name, confidence}` format
 
-### File
-| File | Keterangan |
+### Files
+| File | Description |
 |---|---|
 | `Vision/src/yolowrapper.py` | YOLO wrapper (FP16, warm-up, 320px, batch transfer) |
 | `Vision/models/ModelRGB_V4.2.pt` | RGB model (latest) |
 | `Vision/models/ModelDepth_V4.pt` | Depth model (latest, trained on unfiltered depth) |
 | `environment.yml` | Dependency ultralytics 8.4.77 |
 
-### Input dari
-- **Role 5** — dataset train/val berlabel
+### Input from
+- **Role 5** — labeled train/val dataset
 
-### Output ke
+### Output to
 - **Role 4** — `FrameData.detections` (List[Detection] dataclass)
 
-### Format kontrak output
+### Output contract format
 ```python
 @dataclass
 class Detection:
@@ -66,43 +66,43 @@ class Detection:
     bbox: List[int]      # [x1, y1, x2, y2] xyxy format
 ```
 
-### Selesai bila
-- Model YOLOv8 berjalan inference pada setiap frame RGB pipeline
-- Dual-model: RGB model + Depth model untuk dark mode
+### Done when
+- YOLOv8 model runs inference on every RGB frame in the pipeline
+- Dual-model: RGB model + Depth model for dark mode
 - Latency ≤50ms (GPU) / ≤100ms (CPU)
-- Akurasi ≥70% mAP@0.5 pada kelas target di lingkungan outdoor
-- Stabil pada pencahaayan bervariasi (penurunan akurasi ≤15%)
-- API bersih dan terdokumentasi
+- Accuracy ≥70% mAP@0.5 on target classes in outdoor environments
+- Stable under varying lighting (accuracy degradation ≤15%)
+- Clean and documented API
 
 ---
 
 ## Role 3 — Depth Processing & Obstacle Detection Engineer
-**Orang:** Long
+**Person:** Long
 
-### Tanggung jawab
-- Depth filtering: temporal, spatial edge-preserving, hole-filling, decimation (pakai pyrealsense2 SDK)
+### Responsibilities
+- Depth filtering: temporal, spatial edge-preserving, hole-filling, decimation (via pyrealsense2 SDK)
 - Multi-zone detection: LEFT / CENTER / RIGHT
-- Depth colormap: merah (danger), kuning (warning), hijau (safe) — sekarang LUT-based
-- Unfiltered depth capture sebelum filters (untuk depth model)
-- Obstacle detection dengan bounding box + distance label
+- Depth colormap: red (danger), yellow (warning), green (safe) — now LUT-based
+- Unfiltered depth capture before filters (for depth model)
+- Obstacle detection with bounding box + distance label
 
-### File
-| File | Keterangan |
+### Files
+| File | Description |
 |---|---|
 | `Vision/src/camera_thread.py` | Depth filtering, unfiltered capture, acquisition thread |
 | `Vision/src/obstacle_detector.py` | Obstacle detection (no frame copy, buffer reuse) |
 | `Vision/inc/camera_config.py` | RealSense D455 settings + filter parameters |
 
-### Output ke
+### Output to
 - **Role 4** — `FrameData.obstacles` (List[Dict])
-- **Role 5** — Depth module untuk benchmark
+- **Role 5** — Depth module for benchmark
 
-### Format kontrak output
+### Output contract format
 ```python
 [
     {
         "bbox":        [x, y, w, h],  # bounding box (xywh)
-        "distance_m":  float,          # jarak dalam meter
+        "distance_m":  float,          # distance in meters
         "zone":        "left"|"center"|"right",
         "area_px":     int,            # cv2.contourArea
         "priority":    float,          # inverse distance (raw)
@@ -111,56 +111,56 @@ class Detection:
 ]
 ```
 
-### Selesai bila
-- ObstacleDetector berjalan real-time, akurat untuk objek 0.3m–5m
-- Depth noise berkurang 30% (indoor) / 20% (outdoor) dari raw
-- Colormap menampilkan zona merah/kuning/hijau sesuai threshold (LUT-based)
-- 3 sektor (left/center/right) dengan jarak minimum per sektor
-- Unfiltered depth frame tersedia untuk depth model
+### Done when
+- ObstacleDetector runs in real-time, accurate for objects 0.3m–5m
+- Depth noise reduced by 30% (indoor) / 20% (outdoor) from raw
+- Colormap displays red/yellow/green zones according to thresholds (LUT-based)
+- 3 sectors (left/center/right) with minimum distance per sector
+- Unfiltered depth frame available for depth model
 
-### Catatan outdoor
-RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau area teduh.
+### Outdoor notes
+RealSense D455 is affected by direct sunlight. Test in morning/afternoon, cloudy, or shaded areas.
 
 ---
 
 ## Role 4 — Sensor Fusion Engineer
-**Orang:** Rasyid
+**Person:** Rasyid
 
-### Tanggung jawab
-- Menggabungkan YOLO detections (R2) + depth obstacles (R3)
+### Responsibilities
+- Merge YOLO detections (R2) + depth obstacles (R3)
 - Two-pass architecture: PASS 1 YOLO-first direct depth sampling, PASS 2 depth-only obstacles
-- Prioritas obstacle: person dekat > obstacle dekat > lainnya
+- Obstacle priority: person close > obstacle close > others
 - Adaptive overlap threshold (0.3 dark, 0.5 normal)
 
-### File
-| File | Keterangan |
+### Files
+| File | Description |
 |---|---|
 | `Vision/src/frame_processor.py` | FusionStage implementation |
 | `Vision/src/fusion.md` | FusionStage documentation |
 
-### Input dari
+### Input from
 - **Role 2** — `FrameData.detections` (List[Detection])
 - **Role 3** — `FrameData.obstacles` (List[Dict])
 
-### Output ke
+### Output to
 - **Role 6** — `FrameData.fused_output` (List[Dict])
 
-### Format kontrak output
+### Output contract format
 ```python
 [
     {
         "object_class":  str,                # "person", "chair", "obstacle"
         "distance_m":    float,
         "zone":          "left"|"center"|"right",
-        "priority":      int,                # 0 = paling bahaya
+        "priority":      int,                # 0 = most dangerous
         "bbox":          [x1, y1, x2, y2],  # xyxy format
-        "action":        str | None,         # "STOP" atau None
+        "action":        str | None,         # "STOP" or None
     },
     ...
 ]
 ```
 
-### Aturan prioritas
+### Priority rules
 | Pass | Class | Distance | Priority |
 |---|---|---|---|
 | PASS 1 | person | < danger_distance | 0 (STOP) |
@@ -171,108 +171,108 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 | PASS 2 | obstacle | < 1.0m | 2 |
 | PASS 2 | obstacle | ≥ 1.0m | 3 |
 
-### Implementasi
-- **PASS 1**: Direct depth sampling dari YOLO bbox (center 60%, 25th percentile)
-- **PASS 2**: Overlap metric `intersection / min(depth_area, yolo_area)` untuk cek covered
-- **Adaptive threshold**: 0.3 saat dark/low confidence, 0.5 normal
-- **Config**: `DetectionConfig.danger_distance` dan `warning_distance` (bukan hardcoded)
+### Implementation
+- **PASS 1**: Direct depth sampling from YOLO bbox (center 60%, 25th percentile)
+- **PASS 2**: Overlap metric `intersection / min(depth_area, yolo_area)` for covered check
+- **Adaptive threshold**: 0.3 in dark/low confidence, 0.5 normal
+- **Config**: `DetectionConfig.danger_distance` and `warning_distance` (not hardcoded)
 
-### Selesai bila
-- ✅ Setiap deteksi YOLO punya jarak akurat via direct depth sampling
-- ✅ Prioritas diurutkan benar
-- ✅ Output terstruktur siap dikonsumsi Role 6
+### Done when
+- ✅ Every YOLO detection has accurate distance via direct depth sampling
+- ✅ Priority is correctly ordered
+- ✅ Structured output ready for consumption by Role 6
 - ✅ 92 tests covering fusion + navigation + annotation logic
 
 ---
 
 ## Role 5 — Dataset, Testing & Performance Engineer
-**Orang:** Hamid
+**Person:** Hamid
 
-### Tanggung jawab
-- Akuisisi rekaman RealSense outdoor (berbagai skenario: terik, mendung, bayangan)
-- Labeling dataset YOLO (LabelImg / CVAT / Roboflow)
-- Split train/val/test — serahkan train/val ke R2, simpan test untuk evaluasi
-- Bangun test harness (ukur latency tiap stage)
-- Benchmark end-to-end ≤100ms (P95)
-- Regression test otomatis
+### Responsibilities
+- Acquire RealSense recordings outdoors (various scenarios: bright, cloudy, shaded)
+- Label YOLO dataset (LabelImg / CVAT / Roboflow)
+- Split train/val/test — hand train/val to R2, keep test for evaluation
+- Build test harness (measure latency per stage)
+- End-to-end benchmark ≤100ms (P95)
+- Automated regression testing
 
-### File
-| File | Keterangan |
+### Files
+| File | Description |
 |---|---|
-| `data-collection.md` | Panduan akuisisi dataset |
-| `Doc/model_evaluation_report_v4.md` | Laporan evaluasi model V4.2 + V4 |
+| `data-collection.md` | Dataset acquisition guide |
+| `Doc/model_evaluation_report_v4.md` | V4.2 + V4 model evaluation report |
 | Test scripts | Benchmark harness |
 
-### Output ke
-- **Role 2** — Dataset train/val berlabel
-- **Semua role** — Laporan benchmark & regression test
+### Output to
+- **Role 2** — Labeled train/val dataset
+- **All roles** — Benchmark & regression test report
 
-### Selesai bila
-- Dataset pelatihan: ≥3 kelas, ≥300 frame berlabel (train+val)
-- Dataset uji: ≥3 skenario, ≥200 frame berlabel
-- Test harness mengukur latency setiap stage secara independen
-- Laporan performa: precision, recall, MAE, latency P50/P95/P99
-- Pipeline end-to-end ≤100ms (P95) pada hardware target
+### Done when
+- Training dataset: ≥3 classes, ≥300 labeled frames (train+val)
+- Test dataset: ≥3 scenarios, ≥200 labeled frames
+- Test harness measures latency of each stage independently
+- Performance report: precision, recall, MAE, latency P50/P95/P99
+- Pipeline end-to-end ≤100ms (P95) on target hardware
 
 ---
 
 ## Role 6 — GUI Maintenance & Operator Console Engineer
-**Orang:** Adel
+**Person:** Adel
 
-### Tanggung jawab
-- Memperbarui AlertPanel: nama objek, jarak, zona, status bahaya, rekomendasi aksi
-- Integrasi RadarView (90° FOV, data nyata dari pipeline, cached background)
-- DepthView anotasi: bbox + label + jarak (visible-only updates, auto-switch RGB/Depth)
-- Wiring sinyal dari FrameProcessor ke GUI
-- Maintain stabilitas seluruh widget GUI
+### Responsibilities
+- Update AlertPanel: object name, distance, zone, danger status, action recommendation
+- Integrate RadarView (90° FOV, real data from pipeline, cached background)
+- DepthView annotations: bbox + label + distance (visible-only updates, auto-switch RGB/Depth)
+- Wire signals from FrameProcessor to GUI
+- Maintain stability of all GUI widgets
 - Performance optimization (cached pixmaps, change-only stylesheets)
 
-### File
-| File | Keterangan |
+### Files
+| File | Description |
 |---|---|
-| `GUI/src/main_window.py` | Wiring sinyal + pipeline assembly |
-| `GUI/src/depth_view.py` | Display kamera (2 mode: RGB/Depth, auto-switch, visible-only updates) |
-| `GUI/src/controls_panel.py` | Panel kontrol + threshold sliders + Auto/RGB/Depth view mode |
-| `GUI/src/alert_panel.py` | Panel info + alert (cached stylesheets) |
-| `GUI/src/radar_view.py` | Radar 90° FOV (cached background pixmap) |
-| `GUI/inc/ui_config.py` | Konstanta UI |
+| `GUI/src/main_window.py` | Signal wiring + pipeline assembly |
+| `GUI/src/depth_view.py` | Camera display (2 modes: RGB/Depth, auto-switch, visible-only updates) |
+| `GUI/src/controls_panel.py` | Control panel + threshold sliders + Auto/RGB/Depth view mode |
+| `GUI/src/alert_panel.py` | Info panel + alert (cached stylesheets) |
+| `GUI/src/radar_view.py` | 90° FOV radar (cached background pixmap) |
+| `GUI/inc/ui_config.py` | UI constants |
 | `GUI/inc/styles.py` | Stylesheet + color constants |
 | `main.py` | Qt bootstrap |
 
-### Input dari
+### Input from
 - **Role 4** — `FrameData.fused_output`
 
-### Selesai bila
+### Done when
 - ✅ AlertPanel format: `PERSON | 2.3 m | CENTER | STOP`
-- ✅ RadarView menampilkan posisi obstacle real-time (cached background)
-- ✅ DepthView anotasi: bbox + label + jarak (visible-only updates)
-- ✅ Informasi deteksi tampil ≤50ms setelah frame diproses
-- ✅ Operator bisa ambil keputusan hanya dengan melihat GUI
-- ✅ Semua widget berfungsi tanpa bug
+- ✅ RadarView displays real-time obstacle positions (cached background)
+- ✅ DepthView annotations: bbox + label + distance (visible-only updates)
+- ✅ Detection info shown ≤50ms after frame is processed
+- ✅ Operator can make decisions just by looking at GUI
+- ✅ All widgets work without bugs
 
 ---
 
-## Hubungan Antar Role
+## Cross-Role Relationships
 
-| Dari | Ke | Apa |
+| From | To | What |
 |---|---|---|
-| R1 | R2, R3, R4 | Kontrak API + code review |
-| R1 | R5 | Spesifikasi konfigurasi |
-| R1 | R6 | Spesifikasi API FrameProcessor |
+| R1 | R2, R3, R4 | API contracts + code review |
+| R1 | R5 | Configuration specifications |
+| R1 | R6 | FrameProcessor API specs |
 | R2 | R4 | `List[Detection]` per frame |
-| R2 | R5 | Model YOLO untuk benchmark |
+| R2 | R5 | YOLO model for benchmark |
 | R3 | R4 | Zones, distances, mask, colormap |
 | R4 | R6 | Structured fusion output |
-| R5 | R2 | Dataset train/val |
-| R5 | Semua | Laporan benchmark |
+| R5 | R2 | Train/val dataset |
+| R5 | All | Benchmark report |
 
-### Status Parallel vs Sequential
+### Status — Parallel vs Sequential
 
 | Role | Status |
 |---|---|
-| R1 | ✅ Selesai (97% — hardware test pending) |
-| R2 | ✅ Model selesai (88% — outdoor light stability pending) |
+| R1 | ✅ Complete (97% — hardware test pending) |
+| R2 | ✅ Models complete (88% — outdoor light stability pending) |
 | R3 | ⏳ Outdoor test pending |
-| R4 | ✅ Selesai (100%) |
-| R5 | ✅ Dataset + benchmark selesai (86% — regression test pending) |
-| R6 | ✅ Selesai (83% — 30-min soak + display latency pending) |
+| R4 | ✅ Complete (100%) |
+| R5 | ✅ Dataset + benchmark complete (86% — regression test pending) |
+| R6 | ✅ Complete (83% — 30-min soak + display latency pending) |

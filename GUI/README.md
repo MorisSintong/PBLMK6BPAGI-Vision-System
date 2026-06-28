@@ -1,44 +1,44 @@
 # GUI Module
 
-Dokumentasi ini menjelaskan struktur dan tanggung jawab komponen pada folder `GUI/`.
+This document explains the structure and responsibilities of components in the `GUI/` folder.
 
-## Tujuan Modul
+## Module Purpose
 
-Modul GUI bertanggung jawab untuk:
-- Menampilkan stream kamera (RGB/Depth dengan auto-switch berdasarkan pencahayaan)
-- Menerima interaksi operator (start/stop kamera, pilih mode tampilan)
-- Menampilkan informasi status/alert ke operator
-- Merender radar 90° FOV dengan posisi obstacle real-time
+The GUI module is responsible for:
+- Displaying the camera stream (RGB/Depth with auto-switch based on lighting)
+- Receiving operator interaction (start/stop camera, select display mode)
+- Displaying status/alert information to the operator
+- Rendering a 90° FOV radar with real-time obstacle positions
 
-## Struktur Folder
+## Folder Structure
 
-- `src/` — widget dan logic utama GUI
-- `inc/` — konstanta UI dan style pendukung
+- `src/` — main GUI widgets and logic
+- `inc/` — UI constants and supporting styles
 
-## Komponen Utama (`src`)
+## Main Components (`src`)
 
-| File | Fungsi |
+| File | Function |
 |---|---|
-| `main_window.py` | Menyusun layout utama, menghubungkan sinyal type-safe antar-panel, me-routing konfigurasi GUI ke core pipeline, dan mengassembl pipeline 5-stage. |
-| `depth_view.py` | Area display dengan 2 mode: RGB dan Depth (Overlay dihapus). `setScaledContents` di-set sekali di init. Hanya update label untuk page yang sedang visible. Menangani empty fallback frames via `QImage.isNull()`. |
-| `controls_panel.py` | Kontrol kamera utama, pengaturan jarak alert dinamis, dan pilihan view mode (Auto/RGB/Depth). Auto mode mengikuti sinyal `light_mode_changed` dari CameraThread. |
-| `alert_panel.py` | Menampilkan info objek/jarak serta perubahan warna sesuai status threshold (DANGER/WARN/SAFE). Stylesheet hanya di-update saat status berubah (pre-computed style dicts). |
-| `radar_view.py` | Widget radar 90° FOV dengan cached static background pixmap. Hanya sweep line dan obstacle blips yang di-redraw per frame. Terhubung ke data via `obstacles_ready` signal. |
+| `main_window.py` | Assembles the main layout, connects type-safe signals between panels, routes GUI configuration to the core pipeline, and assembles the 5-stage pipeline. |
+| `depth_view.py` | Display area with 2 modes: RGB and Depth (Overlay removed). `setScaledContents` set once at init. Only updates labels for the currently visible page. Handles empty fallback frames via `QImage.isNull()`. |
+| `controls_panel.py` | Main camera controls, dynamic alert distance settings, and view mode selection (Auto/RGB/Depth). Auto mode follows the `light_mode_changed` signal from CameraThread. |
+| `alert_panel.py` | Displays object/distance info with color changes based on threshold status (DANGER/WARN/SAFE). Stylesheets only updated when status changes (pre-computed style dicts). |
+| `radar_view.py` | 90° FOV radar widget with cached static background pixmap. Only sweep line and obstacle blips are redrawn per frame. Connected to data via `obstacles_ready` signal. |
 
-## Konfigurasi (`inc`)
+## Configuration (`inc`)
 
-| File | Fungsi |
+| File | Function |
 |---|---|
-| `ui_config.py` | Konstanta UI global (nama app, ukuran minimum window, threshold default, radar dimensions, zone labels, action labels). |
+| `ui_config.py` | Global UI constants (app name, minimum window size, default thresholds, radar dimensions, zone labels, action labels). |
 | `styles.py` | Global stylesheet + color constants (status colors, radar colors, infobox styles, text colors). |
 
-## Alur Singkat GUI
+## GUI Data Flow
 
-1. User berinteraksi dengan **Start/Stop** atau **Threshold Sliders** di `ControlsPanel`.
-2. `main_window.py` menghubungkan input ini dan mengirimkannya ke `CameraThread` dan `FrameProcessor`.
-3. Frame *memory-safe* (`QImage`) dan notifikasi status dari Vision pipeline dikirim melalui emit signal.
-4. `DepthView` memeriksa integritas image buffer dan me-render visual overlay (HUD bounding box) ke layar. Hanya label untuk page visible yang di-update.
-5. `RadarView` dan `AlertPanel` memperbarui UI secara real-time dari data spasial obstacle. Radar menggunakan cached background, AlertPanel hanya update stylesheet saat status berubah.
+1. User interacts with **Start/Stop** or **Threshold Sliders** in `ControlsPanel`.
+2. `main_window.py` connects these inputs and routes them to `CameraThread` and `FrameProcessor`.
+3. Memory-safe frames (`QImage`) and status notifications from the Vision pipeline are sent via emitted signals.
+4. `DepthView` checks image buffer integrity and renders visual overlay (HUD bounding box) to the screen. Only labels for the visible page are updated.
+5. `RadarView` and `AlertPanel` update the UI in real-time from spatial obstacle data. Radar uses cached background, AlertPanel only updates stylesheets when status changes.
 
 ## Performance Optimizations
 

@@ -1,19 +1,19 @@
 # PBLMK6BPAGI-Vision-System
 
-Modul vision untuk security robot berbasis **PyQt6 + OpenCV + Intel RealSense D455 + YOLOv8**.
+Vision module for a security robot based on **PyQt6 + OpenCV + Intel RealSense D455 + YOLOv8**.
 
 ## Overview
 
-Aplikasi desktop untuk obstacle avoidance pada security robot:
-- **Depth sensing** — Intel RealSense D455 dengan multi-stage filtering (decimation, spatial, temporal, hole-filling)
+Desktop application for obstacle avoidance on a security robot:
+- **Depth sensing** — Intel RealSense D455 with multi-stage filtering (decimation, spatial, temporal, hole-filling)
 - **Object detection** — YOLOv8 dual-model (RGB + Depth), GPU-accelerated with FP16 on RTX A4000
 - **Dark mode adaptation** — CLAHE preprocessing + automatic model swap to depth model in low light
 - **Sensor fusion** — Depth + YOLO overlap matching with adaptive thresholds and priority matrix
 - **Gap-based navigation** — Polar histogram (VFH-lite) with gap finding, steering output, and speed mapping
 - **Auto-switch view** — Automatically switches between RGB and Depth view based on ambient light (hysteresis: <35 enter dark, >50 exit)
-- **Real-time GUI** — PyQt6 dengan tampilan: Auto/RGB/Depth (auto-switch), Radar 90° FOV, AlertPanel, ControlsPanel
+- **Real-time GUI** — PyQt6 with display: Auto/RGB/Depth (auto-switch), Radar 90° FOV, AlertPanel, ControlsPanel
 
-## Arsitektur
+## Architecture
 
 ```
 main.py → MainWindow
@@ -31,10 +31,10 @@ main.py → MainWindow
                           └── VisualAnnotationStage (HUD + steering arrow)
 ```
 
-## Fitur Utama
+## Key Features
 
-| Fitur | Status | Detail |
-|-------|--------|--------|
+| Feature | Status | Detail |
+|---------|--------|--------|
 | RealSense D455 capture | ✅ | 640x480 @ 30fps, depth + RGB streams, unfiltered depth for model |
 | Depth filters | ✅ | Spatial, temporal, hole-filling (decimation configurable) |
 | Multi-zone detection | ✅ | LEFT / CENTER / RIGHT zones |
@@ -51,7 +51,7 @@ main.py → MainWindow
 | Lazy depth model | ✅ | Depth model loaded only on first dark frame (saves VRAM) |
 | Separate acquisition thread | ✅ | Camera capture decoupled from processing via queue |
 
-## Struktur Project
+## Project Structure
 
 ```
 ├── main.py                    # Entry point
@@ -99,9 +99,9 @@ main.py → MainWindow
 ## Requirements
 
 - Python 3.10
-- Conda (disarankan)
-- NVIDIA GPU (optional, untuk YOLOv8 GPU inference with FP16)
-- Intel RealSense D455 (optional, webcam sebagai fallback)
+- Conda (recommended)
+- NVIDIA GPU (optional, for YOLOv8 GPU inference with FP16)
+- Intel RealSense D455 (optional, webcam as fallback)
 
 ## Setup
 
@@ -118,13 +118,13 @@ conda activate depth-obstacle-detector
 # Place ModelRGB_V4.2.pt and ModelDepth_V4.pt in Vision/models/
 ```
 
-## Menjalankan Aplikasi
+## Running the Application
 
 ```bash
 python main.py
 ```
 
-## Menjalankan Test
+## Running Tests
 
 ```bash
 # Run all tests
@@ -140,19 +140,19 @@ python -m pytest tests/test_frame_processor.py -v
 |-----------|-------|----------|
 | `test_frame_processor.py` | 92 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zones, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model/hysteresis), NavigationStage (clear/blocked/steering/safety override/speed), VisualAnnotationStage (RGB + depth colormap + nav HUD), full pipeline integration |
 | `test_obstacle_detector.py` | 31 | Detection, zones, filtering (min_area, max_area_ratio, distance), priority, frame handling (no copy regression), buffer reuse, thread safety, output contract |
-| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR->QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
+| `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache, thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
 | **Total** | **147** | |
 
 ## Pipeline Architecture
 
-Pipeline menggunakan pola **Chain of Responsibility** dengan 5 stage:
-- Setiap stage mengimplementasikan `PipelineStage` ABC
-- Data mengalir sebagai `FrameData` dataclass
-- Stage bisa di-enable/disable secara modular
-- Exception di stage manapun ditangkap, error dicatat di `FrameData.errors`
+The pipeline uses the **Chain of Responsibility** pattern with 5 stages:
+- Each stage implements the `PipelineStage` ABC
+- Data flows as a `FrameData` dataclass
+- Stages can be enabled/disabled modularly
+- Exceptions in any stage are caught, errors logged in `FrameData.errors`
 
 ```python
-# Contoh penggunaan
+# Example usage
 config = DetectionConfig()
 processor = FrameProcessor(config)
 processor.add_stage(YOLODetectionStage(
@@ -163,21 +163,21 @@ processor.add_stage(FusionStage(config=config))
 processor.add_stage(VisualAnnotationStage(config=config))
 
 result = processor.process(rgb_frame, depth_frame, depth_scale=0.001)
-# result.rgb_frame — frame teranotasi (HUD)
-# result.depth_colormap — visualisasi zona bahaya (LUT)
-# result.obstacles — daftar obstacle dari depth
-# result.detections — deteksi YOLO
-# result.fused_output — hasil fusion (class + distance + priority)
+# result.rgb_frame — annotated frame (HUD)
+# result.depth_colormap — danger zone visualization (LUT)
+# result.obstacles — list of depth obstacles
+# result.detections — YOLO detections
+# result.fused_output — fusion result (class + distance + priority)
 ```
 
-## Catatan
+## Notes
 
-- Dukungan D455 menggunakan `pyrealsense2`
-- Jika RealSense tidak tersedia, aplikasi memakai webcam biasa (RGB only)
-- Pada Windows, capture kamera memprioritaskan backend DirectShow
-- Model weights tidak di-track di git (lihat `.gitignore`)
-- Dual-model: RGB model untuk kondisi terang, depth model untuk kondisi gelap (di-load lazy)
-- Unfiltered depth frame disimpan sebelum RS filters untuk depth model inference
+- D455 support via `pyrealsense2`
+- If RealSense is unavailable, the app uses a regular webcam (RGB only)
+- On Windows, camera capture prioritizes the DirectShow backend
+- Model weights are not tracked in git (see `.gitignore`)
+- Dual-model: RGB model for bright conditions, depth model for dark conditions (lazy-loaded)
+- Unfiltered depth frame is saved before RS filters for depth model inference
 
 ## Team
 
