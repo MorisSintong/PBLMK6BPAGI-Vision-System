@@ -122,4 +122,4 @@ pip-log.*
 # R5 standalone prototype (not part of pipeline)
 # =========================
 Vision/src/YOLO/
-
+doc/
