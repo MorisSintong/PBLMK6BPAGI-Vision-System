@@ -18,7 +18,7 @@ Saat program dimulai (`main.py`), ia menginstansiasi GUI (`MainWindow`). GUI sep
    - `FusionStage` — menggabungkan output R2 + R3 (R4)
    - `NavigationStage` — steering berbasis gap via polar histogram (R1)
    - `VisualAnnotationStage` — rendering HUD (R1)
-4. **Signal Routing:** GUI menghubungkan signal output thread (mis., `frame_pair_ready`, `obstacles_ready`, `navigation_ready`) ke fungsi update miliknya sendiri.
+4. **Signal Routing:** GUI menghubungkan signal output thread (`frame_pair_ready`, `distance_info_ready`, `obstacles_ready`, `navigation_ready`, `light_mode_changed`, `error`) ke fungsi update miliknya sendiri.
 5. **GPU Warm-up:** Jika CUDA tersedia, `YOLOWrapper` menjalankan inference dummy saat loading untuk pre-compile kernel CUDA. Ini mencegah frame pertama yang sebenarnya menjadi lambat.
 
 ---
@@ -527,13 +527,14 @@ qimage = QImage(frame_rgb.tobytes(), w, h, bytes_per_line, Format_RGB888)
 
 ### 4.2 Pancaran Sinyal
 
-Thread memancarkan lima signal:
+Thread memancarkan enam signal:
 
 1. **`frame_pair_ready(QImage, QImage)`** — gambar RGB dan depth untuk display
 2. **`distance_info_ready(str, object, str)`** — label, jarak, zone untuk alert panel
 3. **`obstacles_ready(list)`** — obstacle fused atau mentah untuk radar view
 4. **`navigation_ready(dict)`** — steering angle, speed, status, gaps untuk alert panel + radar
 5. **`light_mode_changed(bool)`** — flag is_dark untuk mode auto-switch view
+6. **`error(str)`** — pesan error fatal dari acquisition thread (mis., kamera gagal dibuka)
 
 Semua signal menyeberangi boundary thread via **signal-slot mechanism** Qt, yang thread-safe by design. Fungsi slot dijalankan di main thread.
 
@@ -613,12 +614,12 @@ Panjang panah = `0.7 × r` (70% radius radar). Warna panah mengikuti status: mer
 |---|---|---|
 | RealSense capture | ~33ms | Hardware-limited pada 30 FPS |
 | DepthProcessingStage (LUT) | ~1–3ms | LUT indexing + obstacle detection |
-| YOLODetectionStage | ~5–10ms | FP16 GPU inference (RTX A4000, 320px) |
+| YOLODetectionStage | ~5–10ms (P50), ≤25ms P95 | FP16 GPU inference (RTX A4000, 320px) |
 | FusionStage | <1ms | Perhitungan overlap + depth sampling |
 | NavigationStage | <1ms | Polar histogram + gap selection |
 | VisualAnnotationStage | ~1ms | OpenCV drawing pada RGB + depth |
 | QImage conversion | ~0.5ms | numpy swap + tobytes() |
-| **Total per frame** | **~10–20ms** | Target: 30 FPS (budget 33ms) |
+| **Total per frame** | **~10–20ms (P50), ~30ms P95** | Target: 30 FPS (budget 33ms) |
 
 ---
 
@@ -640,4 +641,4 @@ Kamera menangkap cahaya (30 FPS)
     → RadarView memplot posisi (cached background)
 ```
 
-*(Seluruh siklus ini terjadi dalam waktu kurang dari ~20 milidetik, 30+ kali per detik.)*
+*(Seluruh siklus ini terjadi dalam waktu kurang dari ~30 milidetik, 30+ kali per detik.)*

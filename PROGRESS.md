@@ -144,7 +144,8 @@ CameraThread (acquisition thread)
                                              ├── distance_info_ready → AlertPanel
                                              ├── obstacles_ready → RadarView
                                              ├── navigation_ready → AlertPanel + RadarView
-                                             └── light_mode_changed → ControlsPanel (auto-switch)
+                                             ├── light_mode_changed → ControlsPanel (auto-switch)
+                                             └── error → MainWindow (camera failure alert)
 ```
 
 ## Optimasi Performa

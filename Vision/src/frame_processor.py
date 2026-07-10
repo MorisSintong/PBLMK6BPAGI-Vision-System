@@ -1,18 +1,19 @@
 """
-Vision/src/frame_processor.py — Pipeline orkestrator untuk pemrosesan frame.
+Vision/src/frame_processor.py - Pipeline orkestrator untuk pemrosesan frame.
 
 Role: ML Pipeline Architect / Frame Processor Lead (Role 1)
 
 Arsitektur: Chain of Responsibility
-  Raw Frame -> DepthProcessing -> YOLODetection -> SensorFusion -> Annotated Output
+  Raw Frame -> DepthProcessing -> YOLODetection -> Fusion -> Navigation -> VisualAnnotation
 
 Setiap stage mengimplementasikan PipelineStage (ABC).
 Stage bisa di-enable/disable secara modular.
 Kontrak antar stage: FrameData (dataclass).
 
 Dependency:
-  - obstacle_detector.ObstacleDetector  (existing, Role 3 & 4)
-  - detection_config.DetectionConfig    (existing, Role 1)
+  - obstacle_detector.ObstacleDetector  (Role 3)
+  - yolowrapper.YOLOWrapper             (Role 2)
+  - detection_config.DetectionConfig    (Role 1)
 """
 
 from __future__ import annotations

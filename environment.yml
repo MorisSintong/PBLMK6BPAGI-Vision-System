@@ -9,10 +9,8 @@ dependencies:
   - python=3.10
   - numpy=1.26
   - opencv=4.9
-  - pyqtgraph=0.13
-  - pyserial=3.5 # optional: for serial alarm output
-  - scipy=1.13 # connected-component filtering
-  - pillow=10.3
+  - pillow=10.3      # required by torchvision
+  - scipy=1.13       # required by ultralytics/torchvision internals
 
   - pytorch
   - torchvision
@@ -23,8 +21,8 @@ dependencies:
   - pip:
       - pyqt6==6.7.0
       - pyqt6-qt6==6.7.0
-      - pyrealsense2==2.55.1.6486 # Intel RealSense SDK wrapper
-      - ultralytics==8.4.77 # YOLOv8 (needs C3k2 module for V4.2/V4 models)
-      - open3d==0.18.0 # point cloud viewer (optional)
-      - pytest==8.0.0 # testing framework
-      - pytest-qt==4.4.0 # Qt testing utilities
+      - pyrealsense2==2.55.1.6486  # Intel RealSense SDK wrapper
+      - ultralytics==8.4.77        # YOLOv8 (needs C3k2 module for V4.2/V4 models)
+      - pytest==8.0.0              # testing framework
+      - pytest-qt==4.4.0           # Qt testing utilities
+      - ruff                       # linter (configured in pyproject.toml)

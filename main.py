@@ -2,8 +2,8 @@
 main.py — Entry point for the Depth Obstacle Detector application.
 
 Responsibilities:
-  - Register all submodule paths into sys.path
   - Bootstrap the QApplication
+  - Apply the global stylesheet
   - Instantiate and show MainWindow
   - Start the Qt event loop
 """

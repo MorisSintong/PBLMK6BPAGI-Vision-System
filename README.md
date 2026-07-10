@@ -69,7 +69,7 @@ main.py → MainWindow
 │   └── benchmark.py               # Benchmark suite (17 kriteria dari ROLES.md)
 ├── Vision/
 │   ├── src/                   # Modul vision utama
-│   │   ├── camera_thread.py   # Capture + filter + pipeline (acq thread terpisah, light_mode_changed signal)
+│   │   ├── camera_thread.py   # Capture + filter + pipeline (acq thread terpisah, 6 Qt signals incl. error)
 │   │   ├── frame_processor.py # Orchestrator pipeline (5 stage)
 │   │   ├── obstacle_detector.py # Depth obstacle detection (tanpa frame copy)
 │   │   ├── yolowrapper.py     # YOLOv8 inference (FP16, warm-up, batch transfer)
