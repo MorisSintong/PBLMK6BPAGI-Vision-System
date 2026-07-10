@@ -12,6 +12,10 @@ dependencies:
   - pillow=10.3      # required by torchvision
   - scipy=1.13       # required by ultralytics/torchvision internals
 
+  # Future-use packages (not imported yet, reserved for planned features)
+  - pyqtgraph=0.13   # future: real-time plots / sensor dashboards
+  - pyserial=3.5     # future: serial alarm output / actuator control
+
   - pytorch
   - torchvision
   - torchaudio
@@ -23,6 +27,7 @@ dependencies:
       - pyqt6-qt6==6.7.0
       - pyrealsense2==2.55.1.6486  # Intel RealSense SDK wrapper
       - ultralytics==8.4.77        # YOLOv8 (needs C3k2 module for V4.2/V4 models)
+      - open3d==0.18.0             # future: point cloud viewer / 3D debugging
       - pytest==8.0.0              # testing framework
       - pytest-qt==4.4.0           # Qt testing utilities
       - ruff                       # linter (configured in pyproject.toml)
