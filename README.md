@@ -180,6 +180,27 @@ result = processor.process(rgb_frame, depth_frame, depth_scale=0.001)
 - Dual-model: RGB model untuk kondisi terang, depth model untuk kondisi gelap (di-load lazy)
 - Unfiltered depth frame disimpan sebelum RS filters untuk depth model inference
 
+## Fitur Mendatang (Open3D Roadmap)
+
+Paket `open3d`, `pyqtgraph`, dan `pyserial` sudah disiapkan di `environment.yml` untuk fitur-fitur di bawah ini. Saat ini belum di-import di codebase, tetapi arsitektur pipeline siap menerima integrasi 3D.
+
+| Fitur | Tingkat Kesulitan | Estimasi Waktu | Catatan |
+|---|---|---|---|
+| **Debug point-cloud viewer** (jendela terpisah) | Mudah | 2–3 hari | Konversi RGB+depth → `o3d.geometry.PointCloud` setiap frame. Perlu downsampling agar FPS tetap bagus. |
+| **Embedded 3D view** di GUI | Sedang | 3–5 hari | Tambah tombol "3D" di `ControlsPanel` dan page baru di `DepthView`. Integrasi Open3D + PyQt6 memerlukan bridge rendering (offscreen buffer atau widget terpisah). |
+| **3D obstacle clustering** (DBSCAN/RANSAC) | Sedang | 4–7 hari | Ganti `cv2.findContours` dengan clustering point cloud untuk bounding box 3D. Lebih akurat untuk obstacle bertumpuk, tetapi lebih lambat dari deteksi 2D saat ini. |
+| **3D voxel navigation / collision map** | Sedang-Sulit | 1–2 minggu | Ganti polar histogram 2D dengan voxel occupancy grid. Perlu ground-plane removal agar lantai tidak dianggap obstacle. |
+| **SLAM / mesh reconstruction** | Sangat Sulit | berminggu-minggu | Di luar scope obstacle avoidance saat ini; memerlukan perubahan arsitektur besar. |
+
+### Risiko utama Open3D
+
+- **Waktu import / startup**: Open3D lambat di-load. Direkomendasikan lazy-import di dalam stage/widget saja.
+- **FPS drop**: Point cloud 640×480 penuh sangat berat. Wajib `voxel_down_sample(voxel_size=0.02–0.05)` dan crop ROI.
+- **Integrasi PyQt6**: Visualizer Open3D bisa konflik dengan event loop Qt. Solusi umum: jalankan di thread/proses terpisah.
+- **Intrinsik kamera**: Perlu fx, fy, cx, cy dari `pyrealsense2` profile agar point cloud tidak distorsi.
+
+Rekomendasi langkah pertama: implementasi **debug point-cloud viewer** karena risiko paling rendah dan tidak mengganggu pipeline/GUI yang sudah berjalan.
+
 ## Tim
 
 | Role | Tanggung Jawab |
