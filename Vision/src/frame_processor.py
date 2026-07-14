@@ -650,10 +650,23 @@ class VisualAnnotationStage(PipelineStage):
     def __init__(self, config: DetectionConfig = None) -> None:
         super().__init__("VisualAnnotationStage")
         self._config = config or DetectionConfig()
+        import time
+        self._last_time = time.time()
+        self._fps = 0.0
 
     def process(self, data: FrameData) -> FrameData:
         if data.rgb_frame is None and data.depth_colormap is None:
             return data
+
+        # Hitung FPS sekali per frame (bukan per draw_hud call)
+        import time
+        current_time = time.time()
+        dt = current_time - self._last_time
+        self._last_time = current_time
+        if dt > 0:
+            current_fps = 1.0 / dt
+            # Exponential Moving Average untuk menghaluskan fluktuasi FPS
+            self._fps = (self._fps * 0.9) + (current_fps * 0.1)
 
         # Pilih sumber data (Fusion prioritas utama, fallback ke obstacles raw, fallback terakhir YOLO)
         items_to_draw = data.fused_output if data.fused_output else data.obstacles
@@ -785,6 +798,15 @@ class VisualAnnotationStage(PipelineStage):
             ax = int(cx + arrow_len * np.sin(angle_rad))
             ay = int(cy - arrow_len * np.cos(angle_rad))
             cv2.arrowedLine(frame, (cx, cy), (ax, ay), nav_color, 3, tipLength=0.3)
+            
+        # 4. Gambar Indikator FPS (tampilkan nilai yang sudah dihitung di process())
+        fps_text = f"FPS: {self._fps:.1f}"
+        fps_color = (50, 205, 50) if self._fps >= 10 else (0, 165, 255) if self._fps >= 5 else (60, 60, 255)
+        
+        (fw, fh), _ = cv2.getTextSize(fps_text, font, scale, thickness)
+        fx, fy = frame.shape[1] - fw - 20, 45
+        cv2.rectangle(frame, (fx - 8, fy - fh - 10), (fx + fw + 8, fy + 10), (30, 30, 30), -1)
+        cv2.putText(frame, fps_text, (fx, fy), font, scale, fps_color, thickness, cv2.LINE_AA)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
