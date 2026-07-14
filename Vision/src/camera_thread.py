@@ -265,9 +265,14 @@ class CameraThread(QThread):
             if _fps_counter >= 30:
                 elapsed = _time.perf_counter() - _fps_timer
                 fps = _fps_counter / elapsed
+                # Per-stage breakdown
+                _stages = ""
+                if self._processor is not None:
+                    for s in self._processor.stages:
+                        _stages += f" {s.name}:{s.last_latency_ms:.0f}ms"
                 logger.info(
                     f"FPS: {fps:.1f} | process: {_last_process_ms:.1f}ms | "
-                    f"qimg: {_last_qimg_ms:.1f}ms"
+                    f"qimg: {_last_qimg_ms:.1f}ms |{_stages}"
                 )
                 _fps_counter = 0
                 _fps_timer = _time.perf_counter()
