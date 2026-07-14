@@ -631,3 +631,66 @@ def should_use_fp16(device: str) -> bool:
         return True
     except ImportError:
         return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GPU Keepalive — prevent Optimus from powering off the dGPU on battery
+# ═══════════════════════════════════════════════════════════════════════════
+
+_keepalive_thread = None
+_keepalive_running = False
+
+
+def start_gpu_keepalive(interval_ms: int = 100):
+    """Start a background thread that keeps the NVIDIA dGPU awake.
+
+    On laptops with NVIDIA Optimus, the dGPU powers off after ~2 seconds
+    of inactivity to save battery. When the next CUDA call arrives, it
+    takes 1-2 seconds for the dGPU to wake up, causing massive latency
+    spikes (0 FPS for several frames).
+
+    This thread runs a tiny CUDA operation every `interval_ms` milliseconds,
+    preventing the dGPU from entering sleep state. The overhead is negligible
+    (~0.05 ms per tick).
+
+    Args:
+        interval_ms: How often to ping the GPU (default 100ms).
+    """
+    global _keepalive_thread, _keepalive_running
+
+    if _keepalive_running:
+        return  # Already running
+
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return
+    except ImportError:
+        return
+
+    _keepalive_running = True
+
+    def _keepalive_loop():
+        global _keepalive_running
+        try:
+            # Allocate a small tensor on GPU once
+            dummy = torch.randn(16, 16, device="cuda")
+            while _keepalive_running:
+                # Tiny operation to keep dGPU awake
+                dummy = dummy * 1.0001
+                torch.cuda.synchronize()
+                time_module.sleep(interval_ms / 1000.0)
+        except Exception:
+            pass  # Silent failure — keepalive is best-effort
+
+    import threading
+    import time as time_module
+    _keepalive_thread = threading.Thread(target=_keepalive_loop, daemon=True)
+    _keepalive_thread.start()
+    logger.info(f"GPU keepalive started (interval={interval_ms}ms) — prevents dGPU sleep on battery")
+
+
+def stop_gpu_keepalive():
+    """Stop the GPU keepalive thread."""
+    global _keepalive_running
+    _keepalive_running = False

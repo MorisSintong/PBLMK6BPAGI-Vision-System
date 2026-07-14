@@ -26,6 +26,7 @@ from Vision.src.gpu_utils import (
     force_cuda_init,
     should_use_fp16,
     setup_gpu_for_max_performance,
+    start_gpu_keepalive,
 )
 
 logger = get_logger(__name__)
@@ -76,6 +77,8 @@ class YOLOWrapper:
                 self.model.predict(source=dummy, imgsz=self.input_size, verbose=False)
                 torch.cuda.synchronize()
                 logger.info("GPU warm-up complete.")
+                # Start keepalive to prevent Optimus from powering off dGPU on battery
+                start_gpu_keepalive(interval_ms=100)
             except Exception as e:
                 logger.warning(f"GPU warm-up failed (will retry on real frames): {e}")
                 self._has_gpu = False
