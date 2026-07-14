@@ -177,6 +177,7 @@ result = processor.process(rgb_frame, depth_frame, depth_scale=0.001)
 - Jika RealSense tidak tersedia, aplikasi memakai webcam biasa (RGB only)
 - Pada Windows, capture kamera memprioritaskan backend DirectShow
 - Model weights tidak di-track di git (lihat `.gitignore`)
+- **GPU dipaksa aktif walau laptop berjalan di baterai** (`Vision/src/gpu_utils.py` memanggil `torch.cuda._lazy_init()` untuk bypass deteksi battery-saver Windows/NVIDIA Battery Boost)
 - Dual-model: RGB model untuk kondisi terang, depth model untuk kondisi gelap (di-load lazy)
 - Unfiltered depth frame disimpan sebelum RS filters untuk depth model inference
 
