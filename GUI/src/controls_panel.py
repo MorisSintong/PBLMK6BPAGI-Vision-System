@@ -1,11 +1,14 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -25,10 +28,22 @@ class ControlsPanel(QWidget):
     view_mode_changed       = pyqtSignal(int)
     auto_mode_changed       = pyqtSignal(bool)
 
+    # ── Input source signals ─────────────────────────────────────────────
+    input_source_changed    = pyqtSignal(str)           # "live" or "video"
+    video_file_selected     = pyqtSignal(str)            # recording directory path
+    playback_start_requested = pyqtSignal()
+    playback_stop_requested  = pyqtSignal()
+    playback_pause_toggled   = pyqtSignal(bool)          # True = paused
+    playback_speed_changed   = pyqtSignal(float)         # 0.25 - 4.0
+    playback_loop_toggled    = pyqtSignal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._camera_running = False
         self._auto_mode = True
+        self._playback_active = False
+        self._playback_paused = False
+        self._selected_video_dir = ""
         self._build_ui()
         self._apply_style()
         self._on_view_change_auto()
@@ -45,6 +60,78 @@ class ControlsPanel(QWidget):
         title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
+
+        # ── Input Source ──────────────────────────────────────────────
+        source_group = QGroupBox("Input Source")
+        source_group.setFont(QFont("Segoe UI", 10))
+        source_layout = QVBoxLayout(source_group)
+
+        self.combo_source = QComboBox()
+        self.combo_source.addItem("Live Camera", "live")
+        self.combo_source.addItem("Video File", "video")
+        self.combo_source.currentIndexChanged.connect(self._on_source_changed)
+        source_layout.addWidget(self.combo_source)
+
+        # Video file browser (hidden initially)
+        self._video_browse_widget = QWidget()
+        browse_layout = QVBoxLayout(self._video_browse_widget)
+        browse_layout.setContentsMargins(0, 4, 0, 0)
+
+        browse_row = QHBoxLayout()
+        self.btn_browse = QPushButton("Browse...")
+        self.btn_browse.clicked.connect(self._on_browse_video)
+        browse_row.addWidget(self.btn_browse)
+        browse_layout.addLayout(browse_row)
+
+        self.lbl_video_path = QLabel("Belum ada file dipilih")
+        self.lbl_video_path.setWordWrap(True)
+        self.lbl_video_path.setStyleSheet("color: #585b70; font-size: 9px;")
+        browse_layout.addWidget(self.lbl_video_path)
+
+        # Playback controls
+        playback_row = QHBoxLayout()
+        self.btn_play_pause = QPushButton("\u25b6 Play")
+        self.btn_play_pause.setEnabled(False)
+        self.btn_play_pause.clicked.connect(self._on_play_pause)
+        playback_row.addWidget(self.btn_play_pause)
+
+        self.btn_playback_stop = QPushButton("\u25a0 Stop")
+        self.btn_playback_stop.setEnabled(False)
+        self.btn_playback_stop.clicked.connect(self._on_playback_stop)
+        playback_row.addWidget(self.btn_playback_stop)
+
+        self.btn_loop = QPushButton("\U0001f501")
+        self.btn_loop.setCheckable(True)
+        self.btn_loop.setMaximumWidth(36)
+        self.btn_loop.setToolTip("Loop playback")
+        self.btn_loop.clicked.connect(self._on_loop_toggled)
+        playback_row.addWidget(self.btn_loop)
+        browse_layout.addLayout(playback_row)
+
+        # Speed slider
+        speed_row = QHBoxLayout()
+        speed_row.addWidget(QLabel("Speed:"))
+        self.slider_speed = QSlider(Qt.Orientation.Horizontal)
+        self.slider_speed.setMinimum(1)   # 0.25x
+        self.slider_speed.setMaximum(8)   # 2.0x
+        self.slider_speed.setValue(4)     # 1.0x default
+        self.slider_speed.setTickInterval(1)
+        self.slider_speed.valueChanged.connect(self._on_speed_changed)
+        speed_row.addWidget(self.slider_speed)
+        self.lbl_speed = QLabel("1.0x")
+        self.lbl_speed.setMinimumWidth(32)
+        speed_row.addWidget(self.lbl_speed)
+        browse_layout.addLayout(speed_row)
+
+        # Progress label
+        self.lbl_playback_progress = QLabel("")
+        self.lbl_playback_progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_playback_progress.setStyleSheet("color: #89b4fa; font-size: 10px;")
+        browse_layout.addWidget(self.lbl_playback_progress)
+
+        self._video_browse_widget.setVisible(False)
+        source_layout.addWidget(self._video_browse_widget)
+        main_layout.addWidget(source_group)
 
         # ── Kamera ────────────────────────────────────────────────────
         cam_group = QGroupBox("Kamera Intel RealSense")
@@ -65,6 +152,8 @@ class ControlsPanel(QWidget):
         btn_row.addWidget(self.btn_start)
         btn_row.addWidget(self.btn_stop)
         cam_layout.addLayout(btn_row)
+
+        self._cam_group = cam_group
         main_layout.addWidget(cam_group)
 
         # ── Pilih Tampilan ────────────────────────────────────────────
@@ -200,6 +289,85 @@ class ControlsPanel(QWidget):
         self.camera_status_label.setText("Status: Tidak Aktif")
         self.camera_status_label.setStyleSheet(STATUS_INACTIVE)
         self.camera_stop_requested.emit()
+
+    # ── Input Source handlers ─────────────────────────────────────────────
+
+    def _on_source_changed(self, index: int):
+        source = self.combo_source.currentData()
+        is_video = source == "video"
+        self._video_browse_widget.setVisible(is_video)
+        self._cam_group.setVisible(not is_video)
+        self.input_source_changed.emit(source)
+
+    def _on_browse_video(self):
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select Recording Folder", "",
+            QFileDialog.Option.ShowDirsOnly,
+        )
+        if directory:
+            self._selected_video_dir = directory
+            # Show just the folder name for readability
+            folder_name = directory.split("/")[-1] or directory.split("\\")[-1]
+            self.lbl_video_path.setText(f"\U0001f4c1 {folder_name}")
+            self.lbl_video_path.setToolTip(directory)
+            self.lbl_video_path.setStyleSheet("color: #a6e3a1; font-size: 9px;")
+            self.btn_play_pause.setEnabled(True)
+            self.video_file_selected.emit(directory)
+
+            # Auto-start playback immediately after selecting a folder
+            self._on_play_pause()
+
+    def _on_play_pause(self):
+        if not self._playback_active:
+            # Start playback
+            self._playback_active = True
+            self._playback_paused = False
+            self.btn_play_pause.setText("\u23f8 Pause")
+            self.btn_playback_stop.setEnabled(True)
+            self.playback_start_requested.emit()
+        else:
+            # Toggle pause
+            self._playback_paused = not self._playback_paused
+            if self._playback_paused:
+                self.btn_play_pause.setText("\u25b6 Resume")
+            else:
+                self.btn_play_pause.setText("\u23f8 Pause")
+            self.playback_pause_toggled.emit(self._playback_paused)
+
+    def _on_playback_stop(self):
+        self._playback_active = False
+        self._playback_paused = False
+        self.btn_play_pause.setText("\u25b6 Play")
+        self.btn_play_pause.setEnabled(True)
+        self.btn_playback_stop.setEnabled(False)
+        self.lbl_playback_progress.setText("")
+        self.playback_stop_requested.emit()
+
+    def _on_speed_changed(self, value: int):
+        # Map slider 1-8 to speed: 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0
+        speed = value * 0.25
+        self.lbl_speed.setText(f"{speed:.2g}x")
+        self.playback_speed_changed.emit(speed)
+
+    def _on_loop_toggled(self):
+        is_loop = self.btn_loop.isChecked()
+        self.btn_loop.setStyleSheet(
+            VIEW_ACTIVE if is_loop else VIEW_DEFAULT
+        )
+        self.playback_loop_toggled.emit(is_loop)
+
+    def update_playback_progress(self, current: int, total: int):
+        """Update the playback progress label (called from MainWindow)."""
+        self.lbl_playback_progress.setText(f"Frame {current}/{total}")
+
+    def on_playback_finished(self):
+        """Reset playback controls when playback ends."""
+        self._playback_active = False
+        self._playback_paused = False
+        self.btn_play_pause.setText("\u25b6 Play")
+        self.btn_play_pause.setEnabled(True)
+        self.btn_playback_stop.setEnabled(False)
+        self.lbl_playback_progress.setText("Selesai")
 
     def _on_apply_threshold(self):
         warning = self.spin_warning.value()
