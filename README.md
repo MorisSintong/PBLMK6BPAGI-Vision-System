@@ -177,7 +177,7 @@ result = processor.process(rgb_frame, depth_frame, depth_scale=0.001)
 - Jika RealSense tidak tersedia, aplikasi memakai webcam biasa (RGB only)
 - Pada Windows, capture kamera memprioritaskan backend DirectShow
 - Model weights tidak di-track di git (lihat `.gitignore`)
-- **GPU dipaksa aktif walau laptop berjalan di baterai** — jalankan `setup_gpu_admin.bat` sebagai Administrator sekali saja untuk set NVIDIA PowerMizer + Windows power management ke max performance. Setelah itu `python main.py` akan menggunakan GPU penuh di baterai. Tanpa admin, GPU tetap dipakai tetapi mungkin throttle (P95 latency lebih tinggi). Diagnostic: `python tests/diagnose_gpu.py`
+- GPU aktif jika tersedia (`torch.cuda.is_available()`), fallback ke CPU otomatis
 - Dual-model: RGB model untuk kondisi terang, depth model untuk kondisi gelap (di-load lazy)
 - Unfiltered depth frame disimpan sebelum RS filters untuk depth model inference
 

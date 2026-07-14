@@ -22,12 +22,6 @@ warnings.filterwarnings("ignore", message=".*weights_only.*", category=FutureWar
 from ultralytics import YOLO
 
 from Vision.inc.logging_config import get_logger
-from Vision.src.gpu_utils import (
-    force_cuda_init,
-    should_use_fp16,
-    setup_gpu_for_max_performance,
-    start_gpu_keepalive,
-)
 
 logger = get_logger(__name__)
 
@@ -42,28 +36,13 @@ class Detection:
 
 
 class YOLOWrapper:
-    def __init__(self, model_path: str, conf_threshold: float = 0.25, input_size: int = 320, force_gpu: bool = True):
+    def __init__(self, model_path: str, conf_threshold: float = 0.25, input_size: int = 320):
         self.conf_threshold = conf_threshold
         self.input_size = input_size
 
-        # Setup GPU for maximum performance. This handles:
-        # 1. Battery state detection (Windows GetSystemPowerStatus)
-        # 2. CUDA initialization (bypass torch.cuda.is_available() False on battery)
-        # 3. GPU clock locking via nvidia-smi (bypass Windows power throttling)
-        # 4. Logging current vs max clocks for diagnostics
-        if force_gpu:
-            gpu_info = setup_gpu_for_max_performance(lock_clocks=True)
-            self._has_gpu = gpu_info["gpu_available"]
-        else:
-            self._has_gpu = torch.cuda.is_available()
-
+        self._has_gpu = torch.cuda.is_available()
         self._device = "0" if self._has_gpu else "cpu"
-        self._fp16 = should_use_fp16(self._device)
-
-        if force_gpu and self._has_gpu:
-            logger.info(
-                f"GPU forced ON. Device: {self._device}, FP16: {self._fp16}"
-            )
+        self._fp16 = self._has_gpu and self._device != "cpu"
 
         logger.info(f"Loading YOLO model from: {model_path} (device: {self._device}, fp16: {self._fp16})")
         self.model = YOLO(model_path)
@@ -77,8 +56,6 @@ class YOLOWrapper:
                 self.model.predict(source=dummy, imgsz=self.input_size, verbose=False)
                 torch.cuda.synchronize()
                 logger.info("GPU warm-up complete.")
-                # Start keepalive to prevent Optimus from powering off dGPU on battery
-                start_gpu_keepalive(interval_ms=100)
             except Exception as e:
                 logger.warning(f"GPU warm-up failed (will retry on real frames): {e}")
                 self._has_gpu = False
