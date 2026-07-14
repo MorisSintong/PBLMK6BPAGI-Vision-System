@@ -22,6 +22,7 @@ warnings.filterwarnings("ignore", message=".*weights_only.*", category=FutureWar
 from ultralytics import YOLO
 
 from Vision.inc.logging_config import get_logger
+from Vision.src.gpu_utils import force_cuda_init, should_use_fp16
 
 logger = get_logger(__name__)
 
@@ -36,26 +37,41 @@ class Detection:
 
 
 class YOLOWrapper:
-    def __init__(self, model_path: str, conf_threshold: float = 0.25, input_size: int = 320):
+    def __init__(self, model_path: str, conf_threshold: float = 0.25, input_size: int = 320, force_gpu: bool = True):
         self.conf_threshold = conf_threshold
         self.input_size = input_size
 
-        self._device = "0" if torch.cuda.is_available() else "cpu"
-        self._fp16 = torch.cuda.is_available()
+        # Force CUDA init to work around battery/power-state issues
+        # where torch.cuda.is_available() returns False on battery
+        self._has_gpu = force_cuda_init() if force_gpu else torch.cuda.is_available()
+        self._device = "0" if self._has_gpu else "cpu"
+        self._fp16 = should_use_fp16(self._device)
+
+        if force_gpu and self._has_gpu:
+            logger.info(
+                f"GPU forced ON (may be running on battery). "
+                f"Device: {self._device}, FP16: {self._fp16}"
+            )
 
         logger.info(f"Loading YOLO model from: {model_path} (device: {self._device}, fp16: {self._fp16})")
         self.model = YOLO(model_path)
         self.class_mapping = self.model.names
 
         # Warm-up: run one dummy inference to pre-compile CUDA kernels
-        if torch.cuda.is_available():
+        if self._has_gpu:
             logger.info("Warming up GPU (first inference is slow)...")
             dummy = np.zeros((self.input_size, self.input_size, 3), dtype=np.uint8)
-            self.model.predict(source=dummy, imgsz=self.input_size, verbose=False)
-            torch.cuda.synchronize()
-            logger.info("GPU warm-up complete.")
+            try:
+                self.model.predict(source=dummy, imgsz=self.input_size, verbose=False)
+                torch.cuda.synchronize()
+                logger.info("GPU warm-up complete.")
+            except Exception as e:
+                logger.warning(f"GPU warm-up failed (will retry on real frames): {e}")
+                self._has_gpu = False
+                self._device = "cpu"
+                self._fp16 = False
 
-        logger.info(f"YOLO model ready. Classes: {len(self.class_mapping)} | GPU: {torch.cuda.is_available()}")
+        logger.info(f"YOLO model ready. Classes: {len(self.class_mapping)} | GPU: {self._has_gpu}")
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         if frame is None:
