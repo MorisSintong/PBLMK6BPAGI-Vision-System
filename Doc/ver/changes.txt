@@ -1,2 +1,0 @@
-YY/MM/DD
-- index.py : aku ganti warna  
