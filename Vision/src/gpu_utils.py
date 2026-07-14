@@ -208,6 +208,65 @@ def apply_windows_gpu_unthrottle() -> bool:
     return success
 
 
+def try_set_nvidia_registry_keys() -> bool:
+    """Try to set NVIDIA driver registry keys for maximum performance.
+
+    These keys control NVIDIA PowerMizer and performance levels:
+    - PerfLevelSrc: 0x33222220 = prefer max performance on all levels
+    - PowerMizerEnable: 0 = disable power saving
+    - PowerMizerLevel: 1 = max performance (AC)
+    - PowerMizerLevelDC: 1 = max performance (battery/DC)
+
+    Requires admin privileges. If not admin, returns False and logs
+    a helpful message.
+
+    Returns:
+        True if all keys were set successfully.
+    """
+    if sys.platform != "win32":
+        return False
+
+    NVIDIA_REG_KEY = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000"
+    keys_to_set = {
+        "PerfLevelSrc": 0x33222220,
+        "PowerMizerEnable": 0x00000000,
+        "PowerMizerLevel": 0x00000001,
+        "PowerMizerLevelDC": 0x00000001,
+    }
+
+    try:
+        import winreg
+    except ImportError:
+        return False
+
+    success = True
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, NVIDIA_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            for name, value in keys_to_set.items():
+                try:
+                    winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, value)
+                    logger.info(f"Set NVIDIA registry: {name} = 0x{value:08X}")
+                except PermissionError:
+                    logger.warning(f"Permission denied setting {name} (need admin)")
+                    success = False
+                except Exception as e:
+                    logger.debug(f"Failed to set {name}: {e}")
+                    success = False
+    except PermissionError:
+        logger.warning(
+            "Cannot open NVIDIA registry key (need admin). "
+            "Run setup_gpu_admin.bat as Administrator for permanent GPU fix."
+        )
+        return False
+    except FileNotFoundError:
+        logger.debug("NVIDIA registry key not found")
+        return False
+
+    if success:
+        logger.info("NVIDIA registry keys set - restart may be needed for full effect")
+    return success
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # NVIDIA GPU performance controls
 # ═══════════════════════════════════════════════════════════════════════════
@@ -420,6 +479,9 @@ def setup_gpu_for_max_performance(lock_clocks: bool = True) -> dict:
         logger.info("Windows power management unthrottle applied (PCI Express + processor state)")
     else:
         logger.warning("Some Windows power management fixes failed (may need admin)")
+
+    # Try to set NVIDIA registry keys (requires admin, fails gracefully)
+    try_set_nvidia_registry_keys()
 
     # Force CUDA init
     gpu_ok = force_cuda_init()
