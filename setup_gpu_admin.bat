@@ -26,19 +26,19 @@ if %errorlevel% neq 0 (
 )
 
 echo [1/6] Setting NVIDIA PerfLevelSrc (force max performance)...
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" /v "PerfLevelSrc" /t REG_DWORD /d 0x33222220 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001" /v "PerfLevelSrc" /t REG_DWORD /d 0x33222220 /f
 echo.
 
 echo [2/6] Setting NVIDIA PowerMizerEnable (disable power saving)...
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" /v "PowerMizerEnable" /t REG_DWORD /d 0x00000000 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001" /v "PowerMizerEnable" /t REG_DWORD /d 0x00000000 /f
 echo.
 
 echo [3/6] Setting NVIDIA PowerMizerLevel (max performance on AC)...
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" /v "PowerMizerLevel" /t REG_DWORD /d 0x00000001 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001" /v "PowerMizerLevel" /t REG_DWORD /d 0x00000001 /f
 echo.
 
 echo [4/6] Setting NVIDIA PowerMizerLevelDC (max performance on battery)...
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000" /v "PowerMizerLevelDC" /t REG_DWORD /d 0x00000001 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001" /v "PowerMizerLevelDC" /t REG_DWORD /d 0x00000001 /f
 echo.
 
 echo [5/6] Disabling PCI Express Link State Power Management...

@@ -208,6 +208,44 @@ def apply_windows_gpu_unthrottle() -> bool:
     return success
 
 
+def _find_nvidia_registry_key() -> str:
+    """Find the registry subkey for the NVIDIA GPU adapter.
+
+    On laptops with dual GPUs (Intel iGPU + NVIDIA dGPU), the NVIDIA
+    adapter may be in \\0000 or \\0001 depending on enumeration order.
+    This function scans all subkeys and returns the one whose
+    DriverDesc contains 'NVIDIA'.
+
+    Returns:
+        Registry path string, or empty string if not found.
+    """
+    if sys.platform != "win32":
+        return ""
+
+    base = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base) as parent:
+            i = 0
+            while True:
+                try:
+                    subkey_name = winreg.EnumKey(parent, i)
+                    i += 1
+                    subkey_path = f"{base}\\{subkey_name}"
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey_path) as sk:
+                            desc, _ = winreg.QueryValueEx(sk, "DriverDesc")
+                            if "NVIDIA" in str(desc):
+                                return subkey_path
+                    except (FileNotFoundError, OSError):
+                        pass
+                except OSError:
+                    break
+    except Exception:
+        pass
+    return ""
+
+
 def try_set_nvidia_registry_keys() -> bool:
     """Try to set NVIDIA driver registry keys for maximum performance.
 
@@ -217,7 +255,8 @@ def try_set_nvidia_registry_keys() -> bool:
     - PowerMizerLevel: 1 = max performance (AC)
     - PowerMizerLevelDC: 1 = max performance (battery/DC)
 
-    Requires admin privileges. If not admin, returns False and logs
+    Automatically finds the correct NVIDIA adapter subkey (not the Intel
+    iGPU). Requires admin privileges. If not admin, returns False and logs
     a helpful message.
 
     Returns:
@@ -226,7 +265,11 @@ def try_set_nvidia_registry_keys() -> bool:
     if sys.platform != "win32":
         return False
 
-    NVIDIA_REG_KEY = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000"
+    nvidia_key = _find_nvidia_registry_key()
+    if not nvidia_key:
+        logger.warning("Could not find NVIDIA adapter in registry")
+        return False
+
     keys_to_set = {
         "PerfLevelSrc": 0x33222220,
         "PowerMizerEnable": 0x00000000,
@@ -241,7 +284,7 @@ def try_set_nvidia_registry_keys() -> bool:
 
     success = True
     try:
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, NVIDIA_REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, nvidia_key, 0, winreg.KEY_SET_VALUE) as key:
             for name, value in keys_to_set.items():
                 try:
                     winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, value)
