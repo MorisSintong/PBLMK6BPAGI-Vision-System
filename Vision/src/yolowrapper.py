@@ -22,7 +22,11 @@ warnings.filterwarnings("ignore", message=".*weights_only.*", category=FutureWar
 from ultralytics import YOLO
 
 from Vision.inc.logging_config import get_logger
-from Vision.src.gpu_utils import force_cuda_init, should_use_fp16
+from Vision.src.gpu_utils import (
+    force_cuda_init,
+    should_use_fp16,
+    setup_gpu_for_max_performance,
+)
 
 logger = get_logger(__name__)
 
@@ -41,16 +45,23 @@ class YOLOWrapper:
         self.conf_threshold = conf_threshold
         self.input_size = input_size
 
-        # Force CUDA init to work around battery/power-state issues
-        # where torch.cuda.is_available() returns False on battery
-        self._has_gpu = force_cuda_init() if force_gpu else torch.cuda.is_available()
+        # Setup GPU for maximum performance. This handles:
+        # 1. Battery state detection (Windows GetSystemPowerStatus)
+        # 2. CUDA initialization (bypass torch.cuda.is_available() False on battery)
+        # 3. GPU clock locking via nvidia-smi (bypass Windows power throttling)
+        # 4. Logging current vs max clocks for diagnostics
+        if force_gpu:
+            gpu_info = setup_gpu_for_max_performance(lock_clocks=True)
+            self._has_gpu = gpu_info["gpu_available"]
+        else:
+            self._has_gpu = torch.cuda.is_available()
+
         self._device = "0" if self._has_gpu else "cpu"
         self._fp16 = should_use_fp16(self._device)
 
         if force_gpu and self._has_gpu:
             logger.info(
-                f"GPU forced ON (may be running on battery). "
-                f"Device: {self._device}, FP16: {self._fp16}"
+                f"GPU forced ON. Device: {self._device}, FP16: {self._fp16}"
             )
 
         logger.info(f"Loading YOLO model from: {model_path} (device: {self._device}, fp16: {self._fp16})")
