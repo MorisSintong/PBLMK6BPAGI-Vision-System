@@ -134,11 +134,7 @@ def disable_pci_express_power_management() -> bool:
 
 
 def set_processor_max_state(percent: int = 100) -> bool:
-    """Set maximum AND minimum processor state to a specific percentage.
-
-    On battery, Windows can set minimum processor state to 5%, causing
-    the CPU to constantly throttle down between frames. Setting both
-    min and max to 100% prevents this.
+    """Set maximum processor state to a specific percentage.
 
     Args:
         percent: 0-100. Use 100 for full performance.
@@ -148,31 +144,27 @@ def set_processor_max_state(percent: int = 100) -> bool:
     """
     PROCESSOR_SUBGROUP = "54533251-82be-4824-96c1-47b60b740d00"
     MAX_STATE_SETTING = "bc5038f7-23e0-4960-96da-33abaf5935ec"
-    MIN_STATE_SETTING = "893dee8e-2bef-41e0-89c6-b55d0929964c"
+    # 0x64 = 100, convert to hex
     value_hex = format(percent, "x")
 
-    # Set MAX state for AC and DC
-    for mode in ["/setacvalueindex", "/setdcvalueindex"]:
-        rc, _, stderr = _run_powercfg([
-            mode, "SCHEME_CURRENT",
-            PROCESSOR_SUBGROUP, MAX_STATE_SETTING, value_hex
-        ])
-        if rc != 0:
-            logger.warning(f"Failed to set {mode} max processor state: {stderr.strip()}")
-            return False
+    rc, _, stderr = _run_powercfg([
+        "/setacvalueindex", "SCHEME_CURRENT",
+        PROCESSOR_SUBGROUP, MAX_STATE_SETTING, value_hex
+    ])
+    if rc != 0:
+        logger.warning(f"Failed to set AC max processor state: {stderr.strip()}")
+        return False
 
-    # Set MIN state for AC and DC (prevents CPU from dropping to 5% on battery)
-    for mode in ["/setacvalueindex", "/setdcvalueindex"]:
-        rc, _, stderr = _run_powercfg([
-            mode, "SCHEME_CURRENT",
-            PROCESSOR_SUBGROUP, MIN_STATE_SETTING, value_hex
-        ])
-        if rc != 0:
-            logger.warning(f"Failed to set {mode} min processor state: {stderr.strip()}")
-            return False
+    rc, _, stderr = _run_powercfg([
+        "/setdcvalueindex", "SCHEME_CURRENT",
+        PROCESSOR_SUBGROUP, MAX_STATE_SETTING, value_hex
+    ])
+    if rc != 0:
+        logger.warning(f"Failed to set DC max processor state: {stderr.strip()}")
+        return False
 
     rc, _, _ = _run_powercfg(["/setactive", "SCHEME_CURRENT"])
-    logger.info(f"Set processor min+max state to {percent}% (AC and DC)")
+    logger.info(f"Set processor max state to {percent}%")
     return rc == 0
 
 
