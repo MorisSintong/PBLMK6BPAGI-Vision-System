@@ -205,6 +205,12 @@ def apply_windows_gpu_unthrottle() -> bool:
         success = False
     if not set_processor_max_state(100):
         success = False
+    # Also disable USB selective suspend (affects RealSense camera on battery)
+    USB_SUBGROUP = "2a737441-1930-4402-8d77-b2bebba308a3"
+    USB_SUSPEND_SETTING = "48e6b7a6-50f5-4782-a5d4-53bb8f07e226"
+    _run_powercfg(["/setacvalueindex", "SCHEME_CURRENT", USB_SUBGROUP, USB_SUSPEND_SETTING, "0"])
+    _run_powercfg(["/setdcvalueindex", "SCHEME_CURRENT", USB_SUBGROUP, USB_SUSPEND_SETTING, "0"])
+    _run_powercfg(["/setactive", "SCHEME_CURRENT"])
     return success
 
 

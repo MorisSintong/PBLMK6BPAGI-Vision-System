@@ -197,6 +197,12 @@ class CameraThread(QThread):
         self._acq_thread = threading.Thread(target=self._realsense_acquisition_worker, daemon=True)
         self._acq_thread.start()
 
+        import time as _time
+        _fps_counter = 0
+        _fps_timer = _time.perf_counter()
+        _last_process_ms = 0.0
+        _last_qimg_ms = 0.0
+
         while self._running:
             try:
                 frames_data = self._frame_queue.get(timeout=0.1)
@@ -208,13 +214,18 @@ class CameraThread(QThread):
             result = None
             zone = "center"
             if self._processor is not None:
+                _t0 = _time.perf_counter()
                 result = self._processor.process(color_bgr, depth_raw, self._depth_scale, depth_raw_unfiltered)
+                _last_process_ms = (_time.perf_counter() - _t0) * 1000
+
+                _t1 = _time.perf_counter()
                 rgb_qimg = self._bgr_to_qimage(result.rgb_frame, is_depth=False)
 
                 if result.depth_colormap is not None:
                     depth_qimg = self._bgr_to_qimage(result.depth_colormap, is_depth=True)
                 else:
                     depth_qimg = self._get_empty_depth_qimage(color_bgr.shape[:2])
+                _last_qimg_ms = (_time.perf_counter() - _t1) * 1000
 
                 if result.fused_output:
                     dist = result.fused_output[0].get("distance_m")
@@ -248,6 +259,18 @@ class CameraThread(QThread):
             if self._processor is not None and result is not None:
                 is_dark = result.metadata.get("is_dark", False)
                 self.light_mode_changed.emit(is_dark)
+
+            # FPS log every 30 frames
+            _fps_counter += 1
+            if _fps_counter >= 30:
+                elapsed = _time.perf_counter() - _fps_timer
+                fps = _fps_counter / elapsed
+                logger.info(
+                    f"FPS: {fps:.1f} | process: {_last_process_ms:.1f}ms | "
+                    f"qimg: {_last_qimg_ms:.1f}ms"
+                )
+                _fps_counter = 0
+                _fps_timer = _time.perf_counter()
 
         self._acq_running = False
         self._acq_thread.join(timeout=1.0)

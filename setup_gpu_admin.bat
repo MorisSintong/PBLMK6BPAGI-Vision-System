@@ -41,14 +41,21 @@ echo [4/6] Setting NVIDIA PowerMizerLevelDC (max performance on battery)...
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001" /v "PowerMizerLevelDC" /t REG_DWORD /d 0x00000001 /f
 echo.
 
-echo [5/6] Disabling PCI Express Link State Power Management...
+echo [5/7] Disabling PCI Express Link State Power Management...
 powercfg /setacvalueindex SCHEME_CURRENT 501a4d13-42af-4429-9fd1-a8218c268e20 ee12f906-d277-404b-b6da-e5fa1a576df5 0
-powercfg /setdcvalueindex SCHEME_CURRENT 501a4d13-42af-4429-9fd1-a8218c268e20 ee12f906-d277-404b-b6da-e5fa1a576df5 0
+powercfg /setdcvalueindex SCHEME_CURRENT 501a4d13-42af-4429-9fd1-a8218c268e20 ee12f906-d277-404b-b6da-e576df5 0
 powercfg /setactive SCHEME_CURRENT
 echo Done.
 echo.
 
-echo [6/6] Setting processor max state to 100%%...
+echo [6/7] Disabling USB selective suspend (fixes RealSense on battery)...
+powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0
+powercfg /setdcvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0
+powercfg /setactive SCHEME_CURRENT
+echo Done.
+echo.
+
+echo [7/7] Setting processor max state to 100%%...
 powercfg /setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100
 powercfg /setdcvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100
 powercfg /setactive SCHEME_CURRENT
