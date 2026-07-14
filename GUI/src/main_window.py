@@ -200,9 +200,11 @@ class MainWindow(QMainWindow):
 
     def _on_camera_start(self):
         self.camera_thread.start_capture()
+        self.radar.start_animation()
 
     def _on_camera_stop(self):
         self.camera_thread.stop_capture()
+        self.radar.stop_animation()
         self.alert_panel.update_info("Menunggu...", None)
         self.alert_panel.update_navigation({})
         self.radar.clear_obstacles()
@@ -242,6 +244,7 @@ class MainWindow(QMainWindow):
             processor=self.frame_processor,
         )
         self._connect_source_signals(self._playback_thread)
+        self.radar.start_animation()
         self._playback_thread.playback_progress.connect(
             self.controls_panel.update_playback_progress
         )
@@ -257,6 +260,7 @@ class MainWindow(QMainWindow):
     def _on_playback_stop(self):
         """Stop video playback."""
         self._stop_playback_thread()
+        self.radar.stop_animation()
         self.alert_panel.update_info("Menunggu...", None)
         self.alert_panel.update_navigation({})
         self.radar.clear_obstacles()
@@ -296,7 +300,6 @@ class MainWindow(QMainWindow):
 
     def _on_obstacles_ready(self, obstacles: list):
         radar_data = []
-        frame_width = 640
         for obs in obstacles:
             bbox = obs.get("bbox", [0, 0, 0, 0])
             radar_data.append({

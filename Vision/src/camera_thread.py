@@ -14,12 +14,12 @@ from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-try:
-    from ui_config import DEPTH_MAX_M, DEPTH_MIN_M, DISPLAY_FPS
-except ImportError:
-    DEPTH_MAX_M = 5.0
-    DEPTH_MIN_M = 0.3
-    DISPLAY_FPS = 30
+# DEPTH_MAX_M, DEPTH_MIN_M, DISPLAY_FPS are hardcoded here.
+# Originally imported from a bare `ui_config` module that was never resolvable;
+# the fallback values were the only ones ever used.
+DEPTH_MAX_M = 5.0
+DEPTH_MIN_M = 0.3
+DISPLAY_FPS = 30
 
 try:
     from Vision.inc.camera_config import CameraConfig
@@ -117,10 +117,15 @@ class CameraThread(QThread):
         if rs is None:
             return False
 
+        # Use CameraConfig values (fall back to 640x480@30 if config unavailable)
+        w = _cam_config.realsense_width if _cam_config else 640
+        h = _cam_config.realsense_height if _cam_config else 480
+        fps = _cam_config.realsense_fps if _cam_config else 30
+
         self._pipeline = rs.pipeline()
         config = rs.config()
-        config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-        config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        config.enable_stream(rs.stream.color, w, h, rs.format.bgr8, fps)
+        config.enable_stream(rs.stream.depth, w, h, rs.format.z16, fps)
         try:
             profile = self._pipeline.start(config)
         except RuntimeError:
@@ -348,8 +353,9 @@ class CameraThread(QThread):
             if not capture.isOpened():
                 capture.release()
                 continue
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            # Match pipeline-tuned 640x480 (2.25x fewer pixels than 1280x720)
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             capture.set(cv2.CAP_PROP_FPS, 30)
             ok, _ = capture.read()
             if ok:

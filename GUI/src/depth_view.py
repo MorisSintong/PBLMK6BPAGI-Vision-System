@@ -37,12 +37,13 @@ class DepthView(QWidget):
         self.stacked_widget.setCurrentIndex(mode_index)
 
     def update_frames(self, rgb_image=None, depth_image=None):
-        if rgb_image is not None and not rgb_image.isNull():
-            rgb_pixmap = QPixmap.fromImage(rgb_image)
-            if self.stacked_widget.currentIndex() == 0:
-                self.label_rgb.setPixmap(rgb_pixmap)
-
-        if depth_image is not None and not depth_image.isNull():
-            depth_pixmap = QPixmap.fromImage(depth_image)
-            if self.stacked_widget.currentIndex() == 1:
-                self.label_depth.setPixmap(depth_pixmap)
+        # Only convert+set the pixmap for the currently visible pane.
+        # This eliminates ~1 wasted QPixmap.fromImage() call per frame.
+        # NOTE: Do NOT pre-scale here — the label may not be laid out yet
+        # (size would be 0,0 on first frames), making the scaled pixmap invalid.
+        # Qt handles scaling on paint via setScaledContents(True) in _create_screen.
+        current = self.stacked_widget.currentIndex()
+        if current == 0 and rgb_image is not None and not rgb_image.isNull():
+            self.label_rgb.setPixmap(QPixmap.fromImage(rgb_image))
+        elif current == 1 and depth_image is not None and not depth_image.isNull():
+            self.label_depth.setPixmap(QPixmap.fromImage(depth_image))

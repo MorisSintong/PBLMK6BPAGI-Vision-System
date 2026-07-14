@@ -28,10 +28,10 @@ RADAR_WIDTH_PX  = 300
 RADAR_HEIGHT_PX = 180
 RADAR_MAX_DEPTH = 8.0
 
-# ── alert panel ──────────────────────────────────────────────────────────────
-MAX_ALERT_ROWS = 10
-
 # ── frame display ─────────────────────────────────────────────────────────────
+# DISPLAY_FPS is consumed by CameraThread for camera-side frame pacing
+# (self._frame_delay_ms). GUI-side update throttling is handled in
+# ControlsPanel.update_playback_progress (every 5 frames).
 DISPLAY_FPS = 30
 
 # ── depth visualization range (metres) ───────────────────────────────────────

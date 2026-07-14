@@ -18,6 +18,30 @@ from GUI.inc.ui_config import RADAR_HEIGHT_PX, RADAR_MAX_DEPTH, RADAR_WIDTH_PX
 
 
 class RadarView(QWidget):
+    # Pre-parsed color/pen/brush objects (avoid per-paint string parsing)
+    _C_BLIP_CENTER = QColor(RADAR_BLIP_CENTER)
+    _C_BLIP_SAFE = QColor(RADAR_BLIP_SAFE)
+    _C_BLIP_SIDE = QColor(RADAR_BLIP_SIDE)
+    _C_SWEEP = QColor(RADAR_SWEEP)
+    _C_BORDER = QColor(RADAR_BORDER)
+    _C_BG = QColor(RADAR_BG)
+    _C_LABEL = QColor(RADAR_LABEL_MUTED)
+    _C_ARROW_STOP = QColor("#f38ba8")
+    _C_ARROW_AVOID = QColor("#fab387")
+    _C_ARROW_CLEAR = QColor("#50f050")
+
+    _BRUSH_BLIP_CENTER = QBrush(_C_BLIP_CENTER)
+    _BRUSH_BLIP_SAFE = QBrush(_C_BLIP_SAFE)
+    _BRUSH_BLIP_SIDE = QBrush(_C_BLIP_SIDE)
+    _BRUSH_BG = QBrush(_C_BG)
+    _BRUSH_SWEEP_DOT = QBrush(_C_SWEEP)
+
+    _PEN_SWEEP = QPen(_C_SWEEP, 1.5)
+    _PEN_BORDER = QPen(_C_BORDER, 1)
+    _PEN_ARROW_STOP = QPen(_C_ARROW_STOP, 3)
+    _PEN_ARROW_AVOID = QPen(_C_ARROW_AVOID, 3)
+    _PEN_ARROW_CLEAR = QPen(_C_ARROW_CLEAR, 3)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(RADAR_WIDTH_PX, RADAR_HEIGHT_PX)
@@ -27,6 +51,7 @@ class RadarView(QWidget):
         self._nav_status = "IDLE"
         self._sweep = 45.0
         self._sweep_dir = 1
+        self._animating = False
 
         # Cache the static radar background (rings, labels, FOV lines) once
         self._static_bg: QPixmap = None
@@ -35,12 +60,29 @@ class RadarView(QWidget):
         # Slower sweep (50ms = 20fps) — radar doesn't need 25fps
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(50)
+        # Don't auto-start; only animate when a source is active
+        # (see start_animation / stop_animation)
 
     # ------------------------------------------------------------------ #
     #  Public API                                                          #
     # ------------------------------------------------------------------ #
+    def start_animation(self):
+        """Start the sweep animation (call when camera/playback begins)."""
+        if not self._animating:
+            self._animating = True
+            self._timer.start(50)
+
+    def stop_animation(self):
+        """Stop the sweep animation (call when camera/playback ends)."""
+        if self._animating:
+            self._animating = False
+            self._timer.stop()
+            self.update()  # One final repaint to clear sweep
+
     def update_obstacles(self, obstacles: list):
+        # Skip if data hasn't changed (avoid redundant repaint)
+        if obstacles == self._obstacles:
+            return
         self._obstacles = obstacles
         self.update()
 
@@ -48,8 +90,14 @@ class RadarView(QWidget):
         """Update steering arrow from NavigationStage output."""
         if not nav_data:
             return
-        self._steering_angle = nav_data.get("steering_angle_deg", 0.0)
-        self._nav_status = nav_data.get("status", "IDLE")
+        new_steer = nav_data.get("steering_angle_deg", 0.0)
+        new_status = nav_data.get("status", "IDLE")
+        # Skip if nothing changed
+        if (new_steer == self._steering_angle
+                and new_status == self._nav_status):
+            return
+        self._steering_angle = new_steer
+        self._nav_status = new_status
         self.update()
 
     def clear_obstacles(self):
@@ -167,13 +215,13 @@ class RadarView(QWidget):
         # Blit cached static background
         p.drawPixmap(0, 0, self._static_bg)
 
-        # Sweep line (dynamic)
+        # Sweep line (dynamic) — use cached pen
         sx = cx + r * math.cos(math.radians(self._sweep))
         sy = cy - r * math.sin(math.radians(self._sweep))
-        p.setPen(QPen(QColor(RADAR_SWEEP), 1.5))
+        p.setPen(self._PEN_SWEEP)
         p.drawLine(QPointF(cx, cy), QPointF(sx, sy))
 
-        # Obstacle blips (dynamic)
+        # Obstacle blips (dynamic) — use cached brushes
         for obs in self._obstacles:
             distance_m = obs.get("distance_m", 0)
             if distance_m <= 0:
@@ -197,17 +245,17 @@ class RadarView(QWidget):
 
             zone_str = obs.get("zone", "center").upper()
             if zone_str == "CENTER":
-                color = QColor(RADAR_BLIP_CENTER)
+                brush = self._BRUSH_BLIP_CENTER
             elif zone_str in ("LEFT", "RIGHT"):
-                color = QColor(RADAR_BLIP_SIDE)
+                brush = self._BRUSH_BLIP_SIDE
             else:
-                color = QColor(RADAR_BLIP_SAFE)
+                brush = self._BRUSH_BLIP_SAFE
 
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(color))
+            p.setBrush(brush)
             p.drawEllipse(QPointF(bx, by), 5, 5)
 
-        # Steering recommendation arrow (dynamic)
+        # Steering recommendation arrow (dynamic) — use cached pens
         if self._nav_status not in ("IDLE", ""):
             # Map steering angle (-45..+45) to radar angle (135..45)
             radar_angle = 90 - self._steering_angle
@@ -216,17 +264,19 @@ class RadarView(QWidget):
             ay = cy - arrow_r * math.sin(math.radians(radar_angle))
 
             if self._nav_status in ("STOPPED", "BLOCKED"):
-                arrow_color = QColor("#f38ba8")
+                pen = self._PEN_ARROW_STOP
+                brush_color = self._C_ARROW_STOP
             elif self._nav_status == "AVOIDING":
-                arrow_color = QColor("#fab387")
+                pen = self._PEN_ARROW_AVOID
+                brush_color = self._C_ARROW_AVOID
             else:
-                arrow_color = QColor("#50f050")
+                pen = self._PEN_ARROW_CLEAR
+                brush_color = self._C_ARROW_CLEAR
 
-            pen = QPen(arrow_color, 3)
             p.setPen(pen)
             p.drawLine(QPointF(cx, cy), QPointF(ax, ay))
             # Arrowhead
-            p.setBrush(QBrush(arrow_color))
+            p.setBrush(QBrush(brush_color))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(QPointF(ax, ay), 4, 4)
 

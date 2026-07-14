@@ -39,6 +39,9 @@ class ObstacleDetector:
         # Reusable buffer for float32 depth conversion (avoids allocation per frame)
         self._depth_buffer: Optional[np.ndarray] = None
 
+        # Cache morphological kernel (avoids per-frame allocation)
+        self._morph_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+
     @property
     def last_detections(self) -> list:
         """Thread-safe getter for last detections."""
@@ -58,31 +61,39 @@ class ObstacleDetector:
         depth_scale=0.001,
         danger_threshold=1.0,
         warning_threshold=3.0,
+        depth_m=None,
     ):
         """
         Mengembalikan frame asli dan daftar obstacle (list of dict)
         sesuai kontrak dengan Role 4 (Sensor Fusion).
+
+        Args:
+            depth_m: Pre-computed float32 depth in meters (optional, avoids
+                redundant conversion). If None, computed from depth_frame.
         """
         if color_frame is None or depth_frame is None:
             return color_frame, []
 
         height, width = depth_frame.shape[:2]
 
-        # Reuse buffer for float32 conversion (avoids ~1.2MB allocation per frame)
-        if self._depth_buffer is None or self._depth_buffer.shape != depth_frame.shape:
-            self._depth_buffer = np.empty_like(depth_frame, dtype=np.float32)
-        np.multiply(depth_frame, depth_scale, out=self._depth_buffer, casting="unsafe")
-        depth_meter = self._depth_buffer
+        # Use pre-computed depth_m if provided, else convert (legacy fallback)
+        if depth_m is not None:
+            depth_meter = depth_m
+        else:
+            # Reuse buffer for float32 conversion (avoids ~1.2MB allocation per frame)
+            if self._depth_buffer is None or self._depth_buffer.shape != depth_frame.shape:
+                self._depth_buffer = np.empty_like(depth_frame, dtype=np.float32)
+            np.multiply(depth_frame, depth_scale, out=self._depth_buffer, casting="unsafe")
+            depth_meter = self._depth_buffer
 
         # Mask area yang dianggap obstacle dalam rentang jarak
         obstacle_mask = (
             (depth_meter >= self.min_distance_m) & (depth_meter <= self.max_distance_m)
         ).astype(np.uint8) * 255
 
-        # Mengurangi noise dengan optimized native structure
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        obstacle_mask = cv2.morphologyEx(obstacle_mask, cv2.MORPH_OPEN, kernel)
-        obstacle_mask = cv2.morphologyEx(obstacle_mask, cv2.MORPH_CLOSE, kernel)
+        # Mengurangi noise dengan optimized native structure (cached kernel)
+        obstacle_mask = cv2.morphologyEx(obstacle_mask, cv2.MORPH_OPEN, self._morph_kernel)
+        obstacle_mask = cv2.morphologyEx(obstacle_mask, cv2.MORPH_CLOSE, self._morph_kernel)
 
         # Cari contour obstacle
         contours, _ = cv2.findContours(
@@ -118,9 +129,9 @@ class ObstacleDetector:
             ]
 
             if valid_depth.size > 0:
-                distance = float(np.percentile(valid_depth, 5))
-
-                priority = round(1 / max(distance, 0.01), 2)
+                # np.partition is O(n) vs np.percentile O(n log n)
+                k = max(0, int(len(valid_depth) * 0.05))
+                distance = float(np.partition(valid_depth, k)[k])
 
                 obstacles_list.append(
                     {
@@ -128,7 +139,6 @@ class ObstacleDetector:
                         "bbox": [x, y, w, h],
                         "distance_m": distance,
                         "zone": zone_str,
-                        "priority": priority,
                         "area_px": int(area),
                     }
                 )

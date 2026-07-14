@@ -208,20 +208,21 @@ def test_obstacle_within_distance_bounds():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_priority_no_division_by_zero():
-    """Distance = 0 → priority should not be infinity."""
+    """Distance = 0 should not cause infinity/nan issues (priority removed in v4)."""
     det = ObstacleDetector(min_area=100)
     color = make_color_frame()
     depth_m = np.full((480, 640), 10.0, dtype=np.float32)
     depth_m[200:300, 280:360] = 0.0
     depth_raw = (depth_m / 0.001).astype(np.uint16)
     _, obstacles = det.detect(color, depth_raw)
+    # priority is no longer computed in ObstacleDetector (FusionStage computes its own)
     for obs in obstacles:
-        assert isinstance(obs["priority"], float)
-        assert obs["priority"] <= 100.0
+        assert "priority" not in obs
+        assert isinstance(obs["distance_m"], float)
 
 
-def test_priority_inverse_to_distance():
-    """Closer obstacle → higher priority value."""
+def test_distance_inverse_to_depth():
+    """Closer obstacle → smaller distance value."""
     det = ObstacleDetector(min_area=100)
     color = make_color_frame()
     depth_m_far = np.full((480, 640), 10.0, dtype=np.float32)
@@ -233,7 +234,7 @@ def test_priority_inverse_to_distance():
     _, obstacles_near = det.detect(color, (depth_m_near / 0.001).astype(np.uint16))
 
     if obstacles_far and obstacles_near:
-        assert obstacles_near[0]["priority"] > obstacles_far[0]["priority"]
+        assert obstacles_near[0]["distance_m"] < obstacles_far[0]["distance_m"]
 
 
 def test_distance_accuracy():
@@ -301,10 +302,11 @@ def test_output_format_contract():
     assert len(obs["bbox"]) == 4
     assert isinstance(obs["distance_m"], float)
     assert isinstance(obs["zone"], str)
-    assert isinstance(obs["priority"], float)
     assert isinstance(obs["area_px"], int)
     assert "object_class" in obs
     assert obs["object_class"] == "obstacle"
+    # priority is no longer in ObstacleDetector output (FusionStage computes its own)
+    assert "priority" not in obs
 
 
 def test_bbox_format_xywh():

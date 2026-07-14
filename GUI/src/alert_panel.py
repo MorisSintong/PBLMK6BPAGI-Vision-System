@@ -87,6 +87,10 @@ class AlertPanel(QWidget):
         self.threshold_warning = THRESHOLD_WARNING
         self.threshold_danger  = THRESHOLD_DANGER
         self._prev_status = "init"
+        # Navigation state guards (avoid per-frame setStyleSheet + setText churn)
+        self._prev_nav_status = ""
+        self._prev_nav_steer = 0.0
+        self._prev_nav_speed = -1.0
         self._build_ui()
         self._apply_style()
 
@@ -215,33 +219,50 @@ class AlertPanel(QWidget):
             if self._prev_status != "waiting":
                 self._prev_status = "waiting"
                 self._apply_status_style(_STYLE_WAITING)
-            self.lbl_object_name.setText("MENUNGGU...")
-            self.lbl_distance.setText("-- m")
-            self.lbl_zone.setText("ZONE: --")
-            self.lbl_action.setText("--")
-            self.lbl_status.setText("SAFE")
+            if self.lbl_object_name.text() != "MENUNGGU...":
+                self.lbl_object_name.setText("MENUNGGU...")
+            if self.lbl_distance.text() != "-- m":
+                self.lbl_distance.setText("-- m")
+            if self.lbl_zone.text() != "ZONE: --":
+                self.lbl_zone.setText("ZONE: --")
+            if self.lbl_action.text() != "--":
+                self.lbl_action.setText("--")
+            if self.lbl_status.text() != "SAFE":
+                self.lbl_status.setText("SAFE")
             return
 
-        self.lbl_object_name.setText(object_name.upper())
-        self.lbl_distance.setText(f"{distance_m:.1f} m")
-        self.lbl_zone.setText(f"ZONE: {zone.upper()}")
-        self.lbl_action.setText(get_action(zone, distance_m))
+        obj_text = object_name.upper()
+        dist_text = f"{distance_m:.1f} m"
+        zone_text = f"ZONE: {zone.upper()}"
+        action_text = get_action(zone, distance_m)
+
+        if self.lbl_object_name.text() != obj_text:
+            self.lbl_object_name.setText(obj_text)
+        if self.lbl_distance.text() != dist_text:
+            self.lbl_distance.setText(dist_text)
+        if self.lbl_zone.text() != zone_text:
+            self.lbl_zone.setText(zone_text)
+        if self.lbl_action.text() != action_text:
+            self.lbl_action.setText(action_text)
 
         if distance_m <= self.threshold_danger:
             if self._prev_status != "danger":
                 self._prev_status = "danger"
                 self._apply_status_style(_STYLE_DANGER)
-            self.lbl_status.setText("DANGER")
+            if self.lbl_status.text() != "DANGER":
+                self.lbl_status.setText("DANGER")
         elif distance_m <= self.threshold_warning:
             if self._prev_status != "warning":
                 self._prev_status = "warning"
                 self._apply_status_style(_STYLE_WARNING)
-            self.lbl_status.setText("WARNING")
+            if self.lbl_status.text() != "WARNING":
+                self.lbl_status.setText("WARNING")
         else:
             if self._prev_status != "safe":
                 self._prev_status = "safe"
                 self._apply_status_style(_STYLE_SAFE)
-            self.lbl_status.setText("SAFE")
+            if self.lbl_status.text() != "SAFE":
+                self.lbl_status.setText("SAFE")
 
     def update_navigation(self, nav_data: dict):
         """Update navigation display from NavigationStage output."""
@@ -252,9 +273,23 @@ class AlertPanel(QWidget):
         steer = nav_data.get("steering_angle_deg", 0.0)
         speed = nav_data.get("speed", 0.0)
 
-        self.lbl_nav_status.setText(status)
-        self.lbl_nav_steer.setText(f"STEER: {steer:+.0f} deg")
-        self.lbl_nav_speed.setText(f"SPEED: {speed:.0%}")
+        # Guard: skip if nothing meaningful changed (avoids setText+setStyleSheet per frame)
+        if (status == self._prev_nav_status
+                and abs(steer - self._prev_nav_steer) < 0.5
+                and abs(speed - self._prev_nav_speed) < 0.01):
+            return
+        self._prev_nav_status = status
+        self._prev_nav_steer = steer
+        self._prev_nav_speed = speed
+
+        if self.lbl_nav_status.text() != status:
+            self.lbl_nav_status.setText(status)
+        steer_text = f"STEER: {steer:+.0f} deg"
+        if self.lbl_nav_steer.text() != steer_text:
+            self.lbl_nav_steer.setText(steer_text)
+        speed_text = f"SPEED: {speed:.0%}"
+        if self.lbl_nav_speed.text() != speed_text:
+            self.lbl_nav_speed.setText(speed_text)
 
         if status == "STOPPED" or status == "BLOCKED":
             self.lbl_nav_status.setStyleSheet("color: #f38ba8; background: transparent;")
