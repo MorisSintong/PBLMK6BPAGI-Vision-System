@@ -64,6 +64,151 @@ def is_on_battery() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Windows power management (powercfg)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _run_powercfg(args: list) -> tuple:
+    """Run powercfg with given arguments.
+
+    Returns:
+        (returncode, stdout, stderr)
+    """
+    if sys.platform != "win32":
+        return -1, "", "powercfg only available on Windows"
+    try:
+        result = subprocess.run(
+            ["powercfg"] + args,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode, result.stdout, result.stderr
+    except FileNotFoundError:
+        return -1, "", "powercfg not found"
+    except Exception as e:
+        return -2, "", str(e)
+
+
+def disable_pci_express_power_management() -> bool:
+    """Disable PCI Express Link State Power Management.
+
+    This is one of the main Windows settings that causes GPU throttling
+    on battery. It can be disabled without admin privileges (it modifies
+    the current user's power settings, not system-wide).
+
+    The relevant GUIDs:
+    - Subgroup: 501a4d13-42af-4429-9fd1-a8218c268e20 (PCI Express)
+    - Setting:  ee12f906-d277-404b-b6da-e5fa1a576df5 (Link State Power Management)
+    - Values:   0=Off, 1=Moderate, 2=Maximum power savings
+
+    Returns:
+        True if successful.
+    """
+    PCI_EXPRESS_SUBGROUP = "501a4d13-42af-4429-9fd1-a8218c268e20"
+    LINK_STATE_SETTING = "ee12f906-d277-404b-b6da-e5fa1a576df5"
+
+    rc, _, stderr = _run_powercfg([
+        "/setacvalueindex", "SCHEME_CURRENT",
+        PCI_EXPRESS_SUBGROUP, LINK_STATE_SETTING, "0"
+    ])
+    if rc != 0:
+        logger.warning(f"Failed to disable PCI Express power management (AC): {stderr.strip()}")
+        return False
+
+    rc, _, stderr = _run_powercfg([
+        "/setdcvalueindex", "SCHEME_CURRENT",
+        PCI_EXPRESS_SUBGROUP, LINK_STATE_SETTING, "0"
+    ])
+    if rc != 0:
+        logger.warning(f"Failed to disable PCI Express power management (DC): {stderr.strip()}")
+        return False
+
+    # Apply the changes
+    rc, _, _ = _run_powercfg(["/setactive", "SCHEME_CURRENT"])
+    if rc != 0:
+        logger.warning("Failed to apply power scheme changes")
+
+    logger.info("Disabled PCI Express Link State Power Management")
+    return True
+
+
+def set_processor_max_state(percent: int = 100) -> bool:
+    """Set maximum processor state to a specific percentage.
+
+    Args:
+        percent: 0-100. Use 100 for full performance.
+
+    Returns:
+        True if successful.
+    """
+    PROCESSOR_SUBGROUP = "54533251-82be-4824-96c1-47b60b740d00"
+    MAX_STATE_SETTING = "bc5038f7-23e0-4960-96da-33abaf5935ec"
+    # 0x64 = 100, convert to hex
+    value_hex = format(percent, "x")
+
+    rc, _, stderr = _run_powercfg([
+        "/setacvalueindex", "SCHEME_CURRENT",
+        PROCESSOR_SUBGROUP, MAX_STATE_SETTING, value_hex
+    ])
+    if rc != 0:
+        logger.warning(f"Failed to set AC max processor state: {stderr.strip()}")
+        return False
+
+    rc, _, stderr = _run_powercfg([
+        "/setdcvalueindex", "SCHEME_CURRENT",
+        PROCESSOR_SUBGROUP, MAX_STATE_SETTING, value_hex
+    ])
+    if rc != 0:
+        logger.warning(f"Failed to set DC max processor state: {stderr.strip()}")
+        return False
+
+    rc, _, _ = _run_powercfg(["/setactive", "SCHEME_CURRENT"])
+    logger.info(f"Set processor max state to {percent}%")
+    return rc == 0
+
+
+def set_high_performance_power_plan() -> bool:
+    """Switch to the built-in 'High Performance' power plan.
+
+    The 'High Performance' plan (GUID 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)
+    prevents CPU/GPU throttling on battery. Requires admin to switch.
+
+    Returns:
+        True if successful.
+    """
+    HIGH_PERF_GUID = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
+    rc, _, stderr = _run_powercfg(["/setactive", HIGH_PERF_GUID])
+    if rc == 0:
+        logger.info("Switched to High Performance power plan")
+        return True
+    logger.debug(f"Could not switch to High Performance plan: {stderr.strip()}")
+    return False
+
+
+def apply_windows_gpu_unthrottle() -> bool:
+    """Apply Windows-side fixes to prevent GPU throttling on battery.
+
+    This function:
+    1. Disables PCI Express Link State Power Management (no admin needed)
+    2. Sets processor max state to 100% for both AC and DC (no admin for
+       current user scheme)
+
+    The function uses the current user's power scheme (SCHEME_CURRENT) so
+    it does NOT require admin privileges for these specific changes.
+
+    Returns:
+        True if all changes were applied successfully.
+    """
+    success = True
+    if not disable_pci_express_power_management():
+        success = False
+    if not set_processor_max_state(100):
+        success = False
+    return success
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # NVIDIA GPU performance controls
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -233,9 +378,10 @@ def setup_gpu_for_max_performance(lock_clocks: bool = True) -> dict:
 
     This function:
     1. Checks if running on battery
-    2. Forces CUDA initialization
-    3. If on battery AND nvidia-smi is available, locks GPU clocks to max
-    4. Logs current vs max clock speeds for diagnostics
+    2. Applies Windows-side fixes (PCI Express power management, processor state)
+    3. Forces CUDA initialization
+    4. If on battery AND nvidia-smi is available, locks GPU clocks to max
+    5. Logs current vs max clock speeds for diagnostics
 
     Args:
         lock_clocks: If True (default), attempt to lock GPU clocks when on battery.
@@ -245,6 +391,7 @@ def setup_gpu_for_max_performance(lock_clocks: bool = True) -> dict:
         - on_battery: bool
         - gpu_available: bool
         - clocks_locked: bool
+        - windows_unthrottle_applied: bool
         - current_graphics_mhz: int (if available)
         - max_graphics_mhz: int (if available)
     """
@@ -252,6 +399,7 @@ def setup_gpu_for_max_performance(lock_clocks: bool = True) -> dict:
         "on_battery": False,
         "gpu_available": False,
         "clocks_locked": False,
+        "windows_unthrottle_applied": False,
         "current_graphics_mhz": None,
         "max_graphics_mhz": None,
     }
@@ -260,9 +408,18 @@ def setup_gpu_for_max_performance(lock_clocks: bool = True) -> dict:
     on_battery = is_on_battery()
     result["on_battery"] = on_battery
     if on_battery:
-        logger.warning("System is on BATTERY power. GPU may be throttled.")
+        logger.warning("System is on BATTERY power. Applying GPU unthrottle measures.")
     else:
         logger.info("System is on AC power (or power state unknown).")
+
+    # Apply Windows-side fixes to prevent GPU throttling
+    # This does NOT require admin for current user scheme
+    windows_ok = apply_windows_gpu_unthrottle()
+    result["windows_unthrottle_applied"] = windows_ok
+    if windows_ok:
+        logger.info("Windows power management unthrottle applied (PCI Express + processor state)")
+    else:
+        logger.warning("Some Windows power management fixes failed (may need admin)")
 
     # Force CUDA init
     gpu_ok = force_cuda_init()
@@ -305,7 +462,7 @@ def setup_gpu_for_max_performance(lock_clocks: bool = True) -> dict:
                 )
         else:
             logger.warning(
-                "Could not lock GPU clocks. "
+                "Could not lock GPU clocks via nvidia-smi. "
                 "Run the application as Administrator, or plug in the charger."
             )
 
