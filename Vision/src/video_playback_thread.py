@@ -97,6 +97,14 @@ class VideoPlaybackThread(QThread):
         # Cached empty depth QImage
         self._empty_depth_qimage: Optional[QImage] = None
 
+        # Separate reusable buffers for RGB and depth BGR→RGB conversion.
+        # Two buffers are needed because both rgb_qimg and depth_qimg are
+        # created in the same frame iteration — sharing a single buffer
+        # would cause the second cv2.cvtColor to overwrite the first,
+        # making both QImages point to the same (depth) data.
+        self._rgb_qimg_buffer: Optional[np.ndarray] = None
+        self._depth_qimg_buffer: Optional[np.ndarray] = None
+
     # ── Public control methods ───────────────────────────────────────────────
 
     def start_playback(self) -> None:
@@ -371,10 +379,23 @@ class VideoPlaybackThread(QThread):
         height, width = frame_bgr.shape[:2]
         channels = frame_bgr.shape[2] if frame_bgr.ndim == 3 else 1
         if channels == 3:
-            frame_rgb = frame_bgr[:, :, ::-1].copy()
+            # Use a separate reusable buffer per is_depth flag.
+            # Safe because callers immediately convert QImage → QPixmap
+            # (which copies the data) before the next frame reuses the buffer.
+            if is_depth:
+                buf = self._depth_qimg_buffer
+                if buf is None or buf.shape != frame_bgr.shape:
+                    buf = np.empty_like(frame_bgr)
+                    self._depth_qimg_buffer = buf
+            else:
+                buf = self._rgb_qimg_buffer
+                if buf is None or buf.shape != frame_bgr.shape:
+                    buf = np.empty_like(frame_bgr)
+                    self._rgb_qimg_buffer = buf
+            cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB, dst=buf)
             bytes_per_line = 3 * width
             return QImage(
-                frame_rgb.tobytes(), width, height, bytes_per_line,
+                buf.data, width, height, bytes_per_line,
                 QImage.Format.Format_RGB888,
             )
         else:
