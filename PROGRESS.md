@@ -47,7 +47,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Dataset classes (≥3) | R5 | ✅ mobil, motor, person |
 | mAP accuracy benchmark | R5 | ✅ RGB 98.37%, Depth 87.23% (>=70% target) |
 | Latency report (P50/P95/P99) | R5 | ✅ `Doc/model_evaluation_report_v4.md` |
-
+| Field Test Report (Realtime FPS) | R5 | ✅ `Doc/field_test_report_role5.md` — Analisis 2.032 frame (Siang/Malam) |
 ### ⏳ In Progress / Not Started
 
 | Deliverable | Role | Status |
@@ -70,7 +70,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | R2 (Husein) — YOLOv8 | 7 items | 1 (light stability outdoor) | 88% |
 | R3 (Long) — Depth | 5 items | 2 (noise reduction on HW, outdoor test) | 71% |
 | R4 (Rasyid) — Fusion | 5 items | 0 | 100% |
-| R5 (Hamid) — Dataset | 6 items | 1 (regression test) | 86% |
+| R5 (Hamid) — Dataset | 7 items | 1 (regression test) | 88% |
 | R6 (Adel) — GUI | 10 items | 2 (30-min soak, display latency) | 83% |
 
 ---
