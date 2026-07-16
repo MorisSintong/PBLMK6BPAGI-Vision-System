@@ -1,3 +1,28 @@
+"""
+Vision/src/camera_thread.py — QThread bridge between hardware and pipeline.
+
+Role 1 (Moris) — ML Pipeline / Integration.
+
+Captures RGB + depth (filtered + unfiltered) from an Intel RealSense D455
+(or webcam fallback) in a separate acquisition thread, decoupled from the
+processing loop via queue.Queue(maxsize=2). Emits memory-safe QImage frame
+pairs to the GUI plus typed signals for distance info, obstacles, navigation
+output, and light-mode changes.
+
+Signals:
+  frame_pair_ready(QImage, QImage)    — (rgb_qimage, depth_qimage)
+  distance_info_ready(str, object, str) — (class_name, distance_m, zone)
+  obstacles_ready(list)                — list of obstacle dicts
+  navigation_ready(dict)               — steering + speed + status
+  light_mode_changed(bool)             — True when scene is dark
+  error(str)                           — fatal capture error
+
+Performance:
+  - Two reusable BGR→RGB buffers (rgb_qimg_buffer, depth_qimg_buffer)
+  - Cached empty-depth QImage (avoids ~1MB alloc per empty frame)
+  - No msleep — queue provides backpressure
+"""
+
 import os
 import sys
 import threading

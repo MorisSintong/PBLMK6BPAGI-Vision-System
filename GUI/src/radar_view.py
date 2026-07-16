@@ -1,4 +1,18 @@
-# GUI/src/radar_view.py
+"""
+GUI/src/radar_view.py — 90° FOV top-down radar widget.
+
+Role 6 (Adel) — GUI.
+
+Renders obstacle positions as blips on a 90° forward-facing radar arc, with a
+sweeping line for visual feedback and a steering arrow derived from
+NavigationStage output.
+
+Performance:
+  - Pre-parsed QColor/QPen/QBrush objects (no per-paint string parsing)
+  - Cached static background pixmap (rings, labels, FOV lines pre-rendered)
+  - Only the sweep + blips are re-drawn per frame via QTimer
+  - 20 FPS animation cap (independent of pipeline FPS)
+"""
 
 import math
 

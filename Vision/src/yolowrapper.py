@@ -5,6 +5,14 @@ Role 2 (Husein) — YOLOv8 Specialist.
 
 Wraps ultralytics YOLO model for inference. Outputs detection results
 in the contract format agreed with R1 (Moris) and R4 (Rasyid).
+
+Features:
+  - Auto-detects CUDA via torch.cuda.is_available(); falls back to CPU
+  - FP16 inference when GPU is available (half=True on Tensor Cores)
+  - GPU warm-up: dummy inference on load to pre-compile CUDA kernels
+  - Reduced input size (default 320) for ~40% fewer pixels vs 416
+  - Batch tensor transfer: one .cpu().numpy() call for all boxes
+  - Output: List[Detection] dataclass with class_id, class_name, confidence, bbox
 """
 
 from dataclasses import dataclass

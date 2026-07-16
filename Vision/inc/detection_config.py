@@ -1,3 +1,17 @@
+"""
+Vision/inc/detection_config.py — Centralized detection thresholds.
+
+Single source of truth for distance thresholds used across the pipeline.
+Values are mutated by GUI sliders via set_danger_distance(); the pipeline
+re-reads them per frame so changes apply immediately.
+
+Thresholds (metres):
+  min_distance     — closer than this is treated as camera noise / too close
+  max_distance     — farther than this is ignored
+  danger_distance  — closer than this triggers DANGER status + STOP action
+  warning_distance — closer than this triggers WARN status + SLOWDOWN
+"""
+
 from Vision.inc.logging_config import get_logger
 
 logger = get_logger(__name__)

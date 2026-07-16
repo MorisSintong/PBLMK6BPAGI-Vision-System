@@ -606,6 +606,67 @@ radar_angle = 90 - steering_angle_deg
 
 Panjang panah = `0.7 × r` (70% radius radar). Warna panah mengikuti status: merah (STOPPED/BLOCKED), oranye (AVOIDING), hijau (CLEAR).
 
+### 5.4 Recording & Playback (Mode Validasi Offline)
+
+Sistem mendukung perekaman sesi live dan playback rekaman melalui pipeline penuh — berguna untuk validasi ulang tanpa hardware atau analisis offline.
+
+#### 5.4.1 VideoRecorder (Rekam Sesi)
+
+`Vision/src/video_recorder.py` menulis RGB + depth ke disk untuk diputar ulang nanti. Dua mode tersedia:
+
+**Mode GUI (non-blocking)** — dipanggil dari pipeline:
+```python
+from Vision.src.video_recorder import VideoRecorder
+rec = VideoRecorder(save_dir="data/recordings")
+rec.start_recording()
+rec.record_frame(rgb_bgr, depth_raw_uint16, depth_filtered_uint16)
+# ... ulangi untuk setiap frame ...
+rec.stop_recording()
+```
+
+**Mode CLI (standalone blocking)** — tanpa GUI, untuk akuisisi dataset:
+```bash
+python -m Vision.src.video_recorder --output data/recordings --duration 60
+```
+
+Output per session: `data/recordings/recording_YYYYMMDD_HHMMSS/`
+- `rgb.avi` — RGB video (MJPG codec)
+- `depth/frame_*.npy` — depth filtered per frame
+- `depth_raw/frame_*.npy` — depth unfiltered per frame
+- `metadata.json` — width, height, fps, frame_count, depth_scale, timestamps
+
+#### 5.4.2 VideoPlaybackThread (Putar Ulang)
+
+`Vision/src/video_playback_thread.py` adalah `QThread` yang membaca folder recording dan menjalankan frame pair (RGB+depth) melalui pipeline 5-stage penuh. Sinyal yang dipancarkan identik dengan `CameraThread` (lihat Bagian 4.2) — MainWindow cukup menukar instance tanpa mengubah wiring.
+
+**Kontrol playback (public API):**
+
+| Method | Fungsi |
+|---|---|
+| `start_playback(recording_dir)` | Mulai playback dari folder recording |
+| `stop_playback()` | Hentikan playback |
+| `set_paused(bool)` | Pause / resume |
+| `toggle_pause()` | Toggle pause state |
+| `set_speed(multiplier)` | Set kecepatan (0.25–4.0x, di-clamp) |
+| `set_loop(bool)` | Aktifkan/nonaktifkan loop otomatis di akhir rekaman |
+| `is_paused` (property) | Status pause saat ini |
+| `set_depth_thresholds(min_m, max_m)` | Update threshold depth (compat dengan CameraThread) |
+
+**Format depth yang didukung:**
+- Stacked `.npy` (cepat, preferensi utama): `depth.npy` shape `(N, H, W)` uint16
+- Individual `.npy` (legacy): `depth/frame_00000.npy`, `depth/frame_00001.npy`, ...
+- RGB-only: tanpa file depth → stage depth di-skip otomatis
+
+#### 5.4.3 Input Source Switcher (Live Camera ↔ Video File)
+
+`ControlsPanel` memiliki toggle **Live Camera** ↔ **Video File**. Saat user memilih Video File, `QFileDialog` terbuka dan `MainWindow`:
+1. Menghentikan `CameraThread` (jika sedang jalan)
+2. Membuat instance `VideoPlaybackThread` baru
+3. Me-reconnect sinyal identik ke slot GUI yang sama
+4. Memulai playback dari folder recording
+
+Karena kontrak sinyal identik, semua widget (DepthView, RadarView, AlertPanel) bekerja tanpa modifikasi. Untuk kembali ke live, user memilih Live Camera dan `CameraThread` di-restart.
+
 ---
 
 ## 6. Ringkasan Performa

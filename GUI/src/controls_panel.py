@@ -1,3 +1,23 @@
+"""
+GUI/src/controls_panel.py — Operator control panel.
+
+Role 6 (Adel) — GUI.
+
+Emits 8 pyqtSignals consumed by MainWindow:
+  camera_start_requested()       — user pressed Start
+  camera_stop_requested()        — user pressed Stop
+  thresholds_changed(d,w)        — GUI danger/warning sliders (object-level)
+  depth_threshold_changed(d,w)   — GUI danger/warning sliders (depth-level)
+  view_mode_changed(int)         — 0=Auto, 1=RGB, 2=Depth
+  auto_mode_changed(bool)        — follows light_mode_changed
+
+Source switcher:
+  A "Live Camera" / "Video File" toggle routes input source selection
+  upstream. When "Video File" is picked, a QFileDialog opens and the
+  selected path is emitted via source_changed(str) for MainWindow to
+  start VideoPlaybackThread.
+"""
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (

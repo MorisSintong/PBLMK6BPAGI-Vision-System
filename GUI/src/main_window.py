@@ -1,3 +1,27 @@
+"""
+GUI/src/main_window.py — Top-level QMainWindow.
+
+Role 1 + Role 6 — Pipeline assembly + GUI integration.
+
+Composes the 4 GUI widgets (DepthView, ControlsPanel, AlertPanel, RadarView)
+and wires them to the vision pipeline. Owns the source-switcher logic that
+selects between live camera (CameraThread) and video playback (VideoPlaybackThread)
+and routes the appropriate QThread to the same set of GUI slots.
+
+Signals routed:
+  frame_pair_ready      → DepthView.update_frame_pair
+  distance_info_ready   → AlertPanel.add_info
+  obstacles_ready       → RadarView.update_obstacles
+  navigation_ready      → AlertPanel + RadarView
+  light_mode_changed    → ControlsPanel
+  error                 → status bar
+
+Input source selection:
+  When user picks a video file via ControlsPanel, the live CameraThread is
+  stopped, the VideoPlaybackThread is started, and its identical signal
+  contract is re-wired to the same slots.
+"""
+
 import os
 import sys
 from pathlib import Path

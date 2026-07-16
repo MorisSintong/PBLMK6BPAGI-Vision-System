@@ -1,4 +1,21 @@
-# Vision/src/obstacle_detector.py
+"""
+Vision/src/obstacle_detector.py — Depth-based obstacle detection.
+
+Role 3 (Long) — Depth Specialist.
+
+Detects obstacle regions in a depth frame using a distance mask + morphological
+filtering + contour extraction. Each obstacle is classified into a horizontal
+zone (left / center / right) and assigned a 5th-percentile distance to suppress
+outliers from reflective surfaces.
+
+Performance:
+  - Reusable float32 buffer (no allocation per frame)
+  - Cached morphological kernel
+  - np.partition for O(n) percentile instead of O(n log n)
+
+Thread safety:
+  - last_detections is guarded by a lock for cross-thread read/write.
+"""
 
 import threading
 from typing import Optional

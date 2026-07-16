@@ -1,3 +1,20 @@
+"""
+GUI/src/depth_view.py — RGB / Depth display widget.
+
+Role 6 (Adel) — GUI.
+
+QStackedWidget with two pages (RGB, Depth) and an "Offline" placeholder for
+each. setScaledContents(True) is set once in init; only the label of the
+currently-visible page receives a new pixmap per frame.
+
+Public API:
+  update_frame_pair(rgb_qimage, depth_qimage) — main entry point from
+    CameraThread / VideoPlaybackThread. Routes the pair to the right page
+    based on view_mode (0=RGB, 1=Depth, 2=Auto-follow-light).
+  set_view_mode(mode) — manual override; in Auto mode the view follows
+    light_mode_changed(bool).
+"""
+
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QStackedWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap

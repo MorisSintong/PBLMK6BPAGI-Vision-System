@@ -1,4 +1,18 @@
-# GUI/src/Alert_panel.py
+"""
+GUI/src/alert_panel.py — Object info + status panel.
+
+Role 6 (Adel) — GUI.
+
+Displays per-object lines (class | distance | zone | action) plus a global
+status indicator. The status style (DANGER / WARNING / SAFE) is recomputed
+only when the underlying state changes — pre-computed style dicts avoid
+re-parsing stylesheets every frame.
+
+Public API:
+  add_info(class_name, distance_m, zone) — append a per-object row
+  update_status(status_str) — set the global status header
+  update_navigation(nav_dict) — set steering/speed readout
+"""
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,

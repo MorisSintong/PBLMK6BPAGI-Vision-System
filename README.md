@@ -51,6 +51,9 @@ main.py → MainWindow
 | Lazy depth model | ✅ | Depth model di-load hanya pada first dark frame (hemat VRAM) |
 | Separate acquisition thread | ✅ | Capture kamera terpisah dari pemrosesan via queue |
 | Auto-switch view | ✅ | Beralih RGB/Depth otomatis berdasarkan pencahayaan (hysteresis) |
+| Video recording | ✅ | Non-blocking API + CLI mode. Simpan RGB AVI + depth NPY + metadata JSON |
+| Video playback | ✅ | Replay recording melalui pipeline penuh. Kontrol: pause/resume, speed (0.25–4.0x), loop |
+| Input Source switcher | ✅ | Toggle Live Camera ↔ Video File di ControlsPanel |
 
 ## Struktur Project
 
@@ -147,7 +150,7 @@ python -m pytest tests/test_frame_processor.py -v
 | `test_camera_thread.py` | 24 | Instansiasi, threshold (validasi + propagasi), BGR→QImage (integritas pixel, grayscale, dimensi), empty depth cache, thread lifecycle, signal (frame_pair, distance, obstacles, navigation, light_mode) |
 | `test_video_recorder.py` | 16 | Recording API, metadata, frame buffering, directory handling, stop/save, multiple sessions |
 | `test_video_playback_thread.py` | 31 | Playback thread lifecycle, depth loading (stacked_npy, individual_npy), pipeline integration, RGB/depth frame output |
-| **Total** | **147** | |
+| **Total** | **194** | |
 
 ## Arsitektur Pipeline
 
@@ -175,6 +178,53 @@ result = processor.process(rgb_frame, depth_frame, depth_scale=0.001)
 # result.detections — deteksi YOLO
 # result.fused_output — hasil fusion (class + distance + priority)
 ```
+
+## Recording & Playback
+
+Sistem mendukung perekaman sesi live dan playback rekaman melalui pipeline penuh — berguna untuk validasi ulang tanpa hardware atau analisis offline.
+
+### VideoRecorder (rekaman)
+
+Menyimpan RGB (AVI MJPG) + depth filtered (NPY) + depth unfiltered (NPY) + metadata (JSON) ke folder `data/recordings/recording_YYYYMMDD_HHMMSS/`.
+
+**Mode GUI (non-blocking):**
+```python
+from Vision.src.video_recorder import VideoRecorder
+rec = VideoRecorder(save_dir="data/recordings")
+rec.start_recording()
+# ... kamera mengirim frame via rec.record_frame(rgb, depth_raw, depth_filtered)
+rec.stop_recording()
+```
+
+**Mode CLI (standalone blocking):**
+```bash
+python -m Vision.src.video_recorder --output data/recordings --duration 60
+# Rekam 60 detik dari RealSense ke data/recordings/recording_YYYYMMDD_HHMMSS/
+```
+
+### VideoPlaybackThread (pemutaran)
+
+`QThread` yang membaca folder recording dan menjalankan frame pair (RGB+depth) melalui pipeline 5-stage penuh, memancarkan sinyal yang sama seperti `CameraThread`.
+
+**Kontrol playback** (API publik, juga tersedia via `tests/test_video_playback_thread.py`):
+| Method | Fungsi |
+|---|---|
+| `start_playback(recording_dir)` | Mulai playback dari folder recording |
+| `stop_playback()` | Hentikan playback |
+| `set_paused(bool)` | Pause / resume |
+| `toggle_pause()` | Toggle pause state |
+| `set_speed(multiplier)` | Set kecepatan (0.25–4.0x, di-clamp) |
+| `set_loop(bool)` | Aktifkan/nonaktifkan loop otomatis di akhir rekaman |
+| `is_paused` (property) | Status pause saat ini |
+
+**Format depth yang didukung:**
+- Stacked `.npy` (cepat, preferensi utama): `depth.npy` shape `(N, H, W)` uint16
+- Individual `.npy` (legacy): `depth/frame_00000.npy`, `depth/frame_00001.npy`, ...
+- RGB-only: tanpa depth → stage depth di-skip otomatis
+
+### Input Source switcher
+
+`ControlsPanel` memiliki toggle **Live Camera** ↔ **Video File**. Saat Video File dipilih, `QFileDialog` terbuka dan `MainWindow` menukar `CameraThread` dengan `VideoPlaybackThread` — sinyal contract identik, sehingga semua widget (DepthView, RadarView, AlertPanel) tidak perlu diubah. Untuk kembali ke live, pilih Live Camera.
 
 ## Catatan
 
