@@ -24,7 +24,8 @@ Modul Vision bertanggung jawab untuk:
 | `frame_processor.py` | Engine utama pipeline vision (5 stage). Chain of Responsibility dengan error handling robust. LUT-based depth colormap. Dual-model YOLO swap + CLAHE + hysteresis. Fusion two-pass architecture. NavigationStage (VFH-lite). VisualAnnotationStage draws HUD on both RGB and depth. |
 | `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference. FP16 auto-detected, GPU warm-up, input_size=320, batch tensor transfer. Output `Detection` dataclass. |
 | `obstacle_detector.py` | Mengekstrak informasi jarak dan prioritas dari depth frame. Tidak mengcopy/memodifikasi color frame. Reusable float32 buffer. Thread-safe `last_detections`. |
-| `recorder.py` | Utilitas uji/rekam stream RealSense secara mandiri. Memiliki flag mutex agar tidak crash dengan pipeline utama. |
+| `video_recorder.py` | Non-blocking recording API (start/stop/save). Saves RGB AVI + depth NPY + metadata JSON. CLI mode available. |
+| `video_playback_thread.py` | Replays recorded RGB+depth videos through full 5-stage pipeline. Supports individual NPY + stacked NPY depth formats. |
 | `fusion.md` | Dokumentasi FusionStage: two-pass architecture, overlap metric, priority matrix. |
 
 ## Konfigurasi (`inc`)

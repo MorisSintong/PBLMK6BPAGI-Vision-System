@@ -29,7 +29,7 @@
 - Pipeline ≥25 FPS (RealSense) / ≥30 FPS (webcam)
 - Semua kontrak antar stage didokumentasikan dan disetujui tim
 - Semua file konfigurasi dikelola sebagai single source of truth
-- 147/147 tests pass
+- 194/194 tests pass
 
 ---
 

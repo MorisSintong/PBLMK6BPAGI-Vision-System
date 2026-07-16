@@ -62,10 +62,12 @@ main.py → MainWindow
 ├── data-collection.md         # Panduan akuisisi dataset (R5)
 ├── environment.yml            # Dependensi conda/pip
 ├── pyproject.toml             # Konfigurasi Ruff + pytest
-├── tests/                     # Test suite (147 tests)
+├── tests/                     # Test suite (194 tests)
 │   ├── test_frame_processor.py    # 92 tests — pipeline, fusion, navigation, dark mode, hysteresis, annotation
 │   ├── test_obstacle_detector.py  # 31 tests — detection, zona, filtering, thread safety
 │   ├── test_camera_thread.py      # 24 tests — signal, threshold, QImage, cache
+│   ├── test_video_recorder.py     # 16 tests — recording API, metadata, frame buffering
+│   ├── test_video_playback_thread.py # 31 tests — playback thread, depth loading, pipeline integration
 │   └── benchmark.py               # Benchmark suite (17 kriteria dari ROLES.md)
 ├── Vision/
 │   ├── src/                   # Modul vision utama
@@ -73,7 +75,8 @@ main.py → MainWindow
 │   │   ├── frame_processor.py # Orchestrator pipeline (5 stage)
 │   │   ├── obstacle_detector.py # Depth obstacle detection (tanpa frame copy)
 │   │   ├── yolowrapper.py     # YOLOv8 inference (FP16, warm-up, batch transfer)
-│   │   └── recorder.py        # Utilitas recording
+│   │   ├── video_recorder.py  # Non-blocking recording API + CLI
+│   │   └── video_playback_thread.py # Replay recorded videos through full pipeline
 │   ├── models/                # (.gitignore) Model weights
 │   │   ├── ModelRGB_V4.2.pt   # Model RGB (R2 latest)
 │   │   ├── ModelDepth_V4.pt   # Model Depth (R2 latest, trained pada unfiltered depth)
@@ -142,6 +145,8 @@ python -m pytest tests/test_frame_processor.py -v
 | `test_frame_processor.py` | 92 | FrameData, PipelineStage, FrameProcessor, DepthProcessingStage (LUT), FusionStage (matching, priority, zona, dark mode, overlap), YOLODetectionStage (dark/bright/CLAHE/dual-model/hysteresis), NavigationStage (clear/blocked/steering/safety override/speed), VisualAnnotationStage (RGB + depth colormap + nav HUD), integrasi pipeline penuh |
 | `test_obstacle_detector.py` | 31 | Detection, zona, filtering (min_area, max_area_ratio, distance), priority, frame handling (regresi no-copy), buffer reuse, thread safety, output contract |
 | `test_camera_thread.py` | 24 | Instansiasi, threshold (validasi + propagasi), BGR→QImage (integritas pixel, grayscale, dimensi), empty depth cache, thread lifecycle, signal (frame_pair, distance, obstacles, navigation, light_mode) |
+| `test_video_recorder.py` | 16 | Recording API, metadata, frame buffering, directory handling, stop/save, multiple sessions |
+| `test_video_playback_thread.py` | 31 | Playback thread lifecycle, depth loading (stacked_npy, individual_npy), pipeline integration, RGB/depth frame output |
 | **Total** | **147** | |
 
 ## Arsitektur Pipeline

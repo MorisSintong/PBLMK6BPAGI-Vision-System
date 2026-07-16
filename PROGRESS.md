@@ -6,7 +6,7 @@
 
 ## Overview
 
-Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, dan 147 tests.
+Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, video recording/playback, dan 194 tests.
 
 ---
 
@@ -16,7 +16,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Deliverable | Role | Detail |
 |---|---|---|
-| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 5 stages: DepthProcessing, YOLODetection, Fusion, Navigation, VisualAnnotation. 147/147 tests pass |
+| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 5 stages: DepthProcessing, YOLODetection, Fusion, Navigation, VisualAnnotation. 194/194 tests pass |
 | Pipeline → CameraThread integration | R1 | Separate acquisition thread + queue(maxsize=2). Camera capture decoupled from processing |
 | Depth filters (preprocessing) | R3 (Long) | Decimation (configurable) → spatial → temporal → hole-filling di CameraThread via pyrealsense2 SDK |
 | Unfiltered depth capture | R1 | `depth_frame_raw` captured BEFORE RS filters for depth model inference |
@@ -35,12 +35,15 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | AlertPanel optimization | R6 | Status-change-only stylesheet updates (no redundant recalc). Pre-computed style dicts |
 | DepthView optimization | R6 | setScaledContents once in init. Only updates visible page labels (RGB / Depth, no Overlay) |
 | CameraThread optimization | R1 | Removed msleep (queue provides flow control). Cached empty depth QImage. numpy BGR→RGB swap |
+| VideoRecorder | R1 | Non-blocking recording API (start/stop/save) + CLI mode. Saves RGB AVI + depth NPY + metadata JSON |
+| VideoPlaybackThread | R1 | Replays recorded RGB+depth through full 5-stage pipeline. Supports individual NPY + stacked NPY depth formats |
+| Input Source switcher | R6 | GUI controls: Live Camera / Video File toggle in ControlsPanel |
 | ControlsPanel cleanup | R6 | Styles extracted to `styles.py`. Status constants |
 | Git best practices doc | R1 | `Doc/texDoc/gitBestPractices/gitBestPractices.pdf` |
 | Team roles documentation | R1 | `Doc/texDoc/teamRoles/Roles.pdf` + `ROLES.md` |
 | Model evaluation report | R5 (Hamid) | `Doc/model_evaluation_report_v4.md` — V4.2 RGB (98.37% mAP) + V4 Depth (87.23% mAP) |
 | Dataset acquisition guide | R5 | `data-collection.md` — comprehensive guide for R5 |
-| Test suite | R1 | 147 tests: 92 frame_processor + 31 obstacle_detector + 24 camera_thread. All pass in ~24s |
+| Test suite | R1 | 194 tests: 92 frame_processor + 31 obstacle_detector + 24 camera_thread + 47 video (recorder + playback). All pass in ~25s |
 | Benchmark suite | R1/R5 | `tests/benchmark.py` — 17/17 software criteria PASS (42.5 FPS, P95 30.50ms) |
 | NavigationStage (gap-based steering) | R1 | Polar histogram (18 sectors), gap finding + scoring, hysteresis, safety override, speed mapping |
 | Dataset acquisition (≥300 frames) | R5 (Hamid) | ✅ RGB: 2668 frames, Depth: 2471 frames |
@@ -174,7 +177,9 @@ CameraThread (acquisition thread)
 | `test_frame_processor.py` | 92 | FrameData, PipelineStage (disabled, latency, exception), FrameProcessor (stages, thresholds, errors), DepthProcessingStage (LUT colors, raw, rebuild), FusionStage (matching, priority, zones, overlap, dark mode, PASS 2 ladder, contract), YOLODetectionStage (dark/bright/CLAHE/dual-model/hysteresis/none), NavigationStage (clear/blocked/steering/safety override/speed/output contract), VisualAnnotationStage (none/empty/fused/obstacles/yolo/danger/in-place/depth colormap/nav HUD), full pipeline integration |
 | `test_obstacle_detector.py` | 31 | Instantiation, edge cases (None/zero), zones (single + multi), filtering (min_area, max_area_ratio, distance), priority (inverse, no div-by-zero), distance accuracy, frame handling (no copy regression, no modification), buffer reuse, thread safety, output contract, last_detections copy |
 | `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache (cached + shape change), thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
-| **Total** | **147** | All pass in ~24s |
+| `test_video_recorder.py` | 16 | Instantiation, recording API (start/stop/save), metadata JSON, frame buffering (RGB/depth), directory handling, multiple sessions, edge cases |
+| `test_video_playback_thread.py` | 31 | Instantiation, depth loading (stacked_npy, individual_npy), playback lifecycle, pipeline integration, RGB/depth frame output, signal emission, error handling |
+| **Total** | **194** | All pass in ~25s |
 
 ## Hasil Benchmark (RTX A4000 Laptop GPU, FP16, 320px)
 
