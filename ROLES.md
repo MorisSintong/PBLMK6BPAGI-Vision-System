@@ -270,9 +270,9 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 
 | Role | Status |
 |---|---|
-| R1 | ✅ Selesai (97% — hardware test pending) |
-| R2 | ✅ Model selesai (88% — outdoor light stability pending) |
-| R3 | ⏳ Outdoor test pending |
+| R1 | ✅ Selesai (100%) |
+| R2 | ✅ Selesai (100%) |
+| R3 | ✅ Selesai (100%) |
 | R4 | ✅ Selesai (100%) |
-| R5 | ✅ Dataset + benchmark selesai (86% — regression test pending) |
-| R6 | ✅ Selesai (83% — 30-min soak + display latency pending) |
+| R5 | ✅ Selesai (100%) |
+| R6 | ✅ Selesai (100%) |

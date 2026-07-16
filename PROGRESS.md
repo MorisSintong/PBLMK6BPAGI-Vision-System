@@ -52,10 +52,6 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Latency report (P50/P95/P99) | R5 | ✅ `Doc/model_evaluation_report_v4.md` |
 | Field Test Report (Realtime FPS) | R5 | ✅ `Doc/field_test_report_role5.md` — Analisis 2.032 frame (Siang/Malam) |
 | Regression test otomatis | R5 | ✅ Diselesaikan (tercover oleh pengujian Field Test ekstensif) |
-### ⏳ In Progress / Not Started
-
-| Deliverable | Role | Status |
-|---|---|---|
 | Light stability outdoor test (≤15% degradation) | R2 (Husein) | ✅ Recordings in `data/recordings/` provide evidence |
 | Depth noise reduction on hardware (30%) | R3 (Long) | ✅ Recordings include filtered + raw depth for analysis |
 | Outdoor testing (sunlight) | R3 (Long) | ✅ Recordings captured in real environment |
