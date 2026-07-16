@@ -199,6 +199,8 @@ CameraThread (acquisition thread)
 | R5: Per-stage latency harness | All stages | 5 stages measured | PASS |
 | **Total** | | **17/17 PASS** | |
 
+> **Catatan benchmark vs real-time:** Benchmark di atas mengukur pipeline murni (`FrameProcessor.process()` dengan synthetic frames) pada RTX A4000. Real-time dengan Qt GUI + QImage + sinyal: ~20 FPS. Field test CPU-only (AMD Ryzen 5 6600H): 1.3–3.4 FPS. Lihat `flow.md` §6 untuk breakdown overhead.
+
 ## Gap yang Diketahui
 
 | Gap | Detail |

@@ -682,6 +682,16 @@ Karena kontrak sinyal identik, semua widget (DepthView, RadarView, AlertPanel) b
 | QImage conversion | ~0.5ms | numpy swap + tobytes() |
 | **Total per frame** | **~10–20ms (P50), ~30ms P95** | Target: 30 FPS (budget 33ms) |
 
+> **Catatan benchmark vs real-time:** Angka di atas adalah latensi pipeline murni (`FrameProcessor.process()` pada synthetic frames). Tiga mode pengukuran:
+>
+> | Mode | FPS | Kondisi | Sumber |
+> |---|---|---|---|
+> | Pipeline benchmark | 42.5 FPS (P50) | GPU RTX A4000, synthetic frames, tanpa GUI/Qt | `tests/benchmark.py` |
+> | Real-time (GPU + GUI) | ~20 FPS | GPU + Qt signal-slot + QImage + GUI render | Observasi runtime |
+> | Real-time (CPU-only) | 1.3–3.4 FPS | AMD Ryzen 5 6600H, tanpa GPU, RealSense | `Doc/field_test_report_role5.md` |
+>
+> Gap benchmark → real-time disebabkan oleh overhead yang **tidak diukur** di benchmark: konversi QImage (~0.5ms × 2 frame), emisi 6 Qt signal, render `DepthView` (scaled pixmap), `RadarView` (20 FPS paint timer), `AlertPanel` (stylesheet update), dan resize event dari `QScrollArea`. Gap CPU-only disebabkan oleh inferensi YOLO tanpa GPU (~200ms vs ~13ms di GPU).
+
 ---
 
 ## Ringkasan Alur

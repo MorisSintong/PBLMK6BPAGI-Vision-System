@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -64,6 +65,8 @@ class ControlsPanel(QWidget):
         self._playback_active = False
         self._playback_paused = False
         self._selected_video_dir = ""
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(220)
         self._build_ui()
         self._apply_style()
         self._on_view_change_auto()
@@ -72,21 +75,24 @@ class ControlsPanel(QWidget):
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setSpacing(4)
 
         # ── Judul ─────────────────────────────────────────────────────
         title = QLabel("Controls Panel")
-        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
 
         # ── Input Source ──────────────────────────────────────────────
         source_group = QGroupBox("Input Source")
-        source_group.setFont(QFont("Segoe UI", 10))
+        source_group.setFont(QFont("Segoe UI", 9))
         source_layout = QVBoxLayout(source_group)
+        source_layout.setContentsMargins(6, 4, 6, 4)
+        source_layout.setSpacing(2)
 
         self.combo_source = QComboBox()
+        self.combo_source.setMaximumHeight(26)
         self.combo_source.addItem("Live Camera", "live")
         self.combo_source.addItem("Video File", "video")
         self.combo_source.currentIndexChanged.connect(self._on_source_changed)
@@ -95,27 +101,31 @@ class ControlsPanel(QWidget):
         # Video file browser (hidden initially)
         self._video_browse_widget = QWidget()
         browse_layout = QVBoxLayout(self._video_browse_widget)
-        browse_layout.setContentsMargins(0, 4, 0, 0)
+        browse_layout.setContentsMargins(0, 2, 0, 0)
+        browse_layout.setSpacing(2)
 
         browse_row = QHBoxLayout()
         self.btn_browse = QPushButton("Browse...")
+        self.btn_browse.setMaximumHeight(26)
         self.btn_browse.clicked.connect(self._on_browse_video)
         browse_row.addWidget(self.btn_browse)
         browse_layout.addLayout(browse_row)
 
         self.lbl_video_path = QLabel("Belum ada file dipilih")
         self.lbl_video_path.setWordWrap(True)
-        self.lbl_video_path.setStyleSheet("color: #585b70; font-size: 9px;")
+        self.lbl_video_path.setStyleSheet("color: #585b70; font-size: 8px;")
         browse_layout.addWidget(self.lbl_video_path)
 
         # Playback controls
         playback_row = QHBoxLayout()
         self.btn_play_pause = QPushButton("\u25b6 Play")
+        self.btn_play_pause.setMaximumHeight(26)
         self.btn_play_pause.setEnabled(False)
         self.btn_play_pause.clicked.connect(self._on_play_pause)
         playback_row.addWidget(self.btn_play_pause)
 
         self.btn_playback_stop = QPushButton("\u25a0 Stop")
+        self.btn_playback_stop.setMaximumHeight(26)
         self.btn_playback_stop.setEnabled(False)
         self.btn_playback_stop.clicked.connect(self._on_playback_stop)
         playback_row.addWidget(self.btn_playback_stop)
@@ -123,6 +133,7 @@ class ControlsPanel(QWidget):
         self.btn_loop = QPushButton("\U0001f501")
         self.btn_loop.setCheckable(True)
         self.btn_loop.setMaximumWidth(36)
+        self.btn_loop.setMaximumHeight(26)
         self.btn_loop.setToolTip("Loop playback")
         self.btn_loop.clicked.connect(self._on_loop_toggled)
         playback_row.addWidget(self.btn_loop)
@@ -146,7 +157,7 @@ class ControlsPanel(QWidget):
         # Progress label
         self.lbl_playback_progress = QLabel("")
         self.lbl_playback_progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_playback_progress.setStyleSheet("color: #89b4fa; font-size: 10px;")
+        self.lbl_playback_progress.setStyleSheet("color: #89b4fa; font-size: 9px;")
         browse_layout.addWidget(self.lbl_playback_progress)
 
         self._video_browse_widget.setVisible(False)
@@ -155,17 +166,22 @@ class ControlsPanel(QWidget):
 
         # ── Kamera ────────────────────────────────────────────────────
         cam_group = QGroupBox("Kamera Intel RealSense")
-        cam_group.setFont(QFont("Segoe UI", 10))
+        cam_group.setFont(QFont("Segoe UI", 9))
         cam_layout = QVBoxLayout(cam_group)
+        cam_layout.setContentsMargins(6, 4, 6, 4)
+        cam_layout.setSpacing(2)
 
         self.camera_status_label = QLabel("Status: Tidak Aktif")
         self.camera_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_status_label.setFont(QFont("Segoe UI", 10))
+        self.camera_status_label.setFont(QFont("Segoe UI", 9))
+        self.camera_status_label.setMaximumHeight(18)
         cam_layout.addWidget(self.camera_status_label)
 
         btn_row = QHBoxLayout()
         self.btn_start = QPushButton("Start")
         self.btn_stop  = QPushButton("Stop")
+        self.btn_start.setMaximumHeight(26)
+        self.btn_stop.setMaximumHeight(26)
         self.btn_stop.setEnabled(False)
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
@@ -178,12 +194,16 @@ class ControlsPanel(QWidget):
 
         # ── Pilih Tampilan ────────────────────────────────────────────
         view_group = QGroupBox("Pilih Tampilan")
-        view_group.setFont(QFont("Segoe UI", 10))
+        view_group.setFont(QFont("Segoe UI", 9))
         view_layout = QHBoxLayout(view_group)
+        view_layout.setContentsMargins(6, 4, 6, 4)
 
         self.btn_view_auto  = QPushButton("Auto")
         self.btn_view_rgb   = QPushButton("RGB")
         self.btn_view_depth = QPushButton("Depth")
+        self.btn_view_auto.setMaximumHeight(26)
+        self.btn_view_rgb.setMaximumHeight(26)
+        self.btn_view_depth.setMaximumHeight(26)
 
         self.btn_view_auto.clicked.connect(self._on_view_change_auto)
         self.btn_view_rgb.clicked.connect(lambda: self._on_view_change(0))
@@ -196,8 +216,10 @@ class ControlsPanel(QWidget):
 
         # ── Threshold Alert ───────────────────────────────────────────
         alert_group = QGroupBox("Threshold Alert (meter)")
-        alert_group.setFont(QFont("Segoe UI", 10))
+        alert_group.setFont(QFont("Segoe UI", 9))
         alert_layout = QVBoxLayout(alert_group)
+        alert_layout.setContentsMargins(6, 4, 6, 4)
+        alert_layout.setSpacing(2)
 
         warn_row = QHBoxLayout()
         warn_row.addWidget(QLabel("Warning:"))
@@ -220,19 +242,24 @@ class ControlsPanel(QWidget):
         alert_layout.addLayout(danger_row)
 
         self.btn_apply_alert = QPushButton("Apply Alert Threshold")
+        self.btn_apply_alert.setMaximumHeight(26)
         self.btn_apply_alert.clicked.connect(self._on_apply_threshold)
         alert_layout.addWidget(self.btn_apply_alert)
 
         self.thr_info = QLabel()
         self.thr_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thr_info.setWordWrap(True)
+        self.thr_info.setStyleSheet("font-size: 9px;")
+        self.thr_info.setMaximumHeight(30)
         alert_layout.addWidget(self.thr_info)
         main_layout.addWidget(alert_group)
 
         # ── Threshold Depth View ──────────────────────────────────────
         depth_group = QGroupBox("Threshold Depth View (meter)")
-        depth_group.setFont(QFont("Segoe UI", 10))
+        depth_group.setFont(QFont("Segoe UI", 9))
         depth_layout = QVBoxLayout(depth_group)
+        depth_layout.setContentsMargins(6, 4, 6, 4)
+        depth_layout.setSpacing(2)
 
         min_row = QHBoxLayout()
         min_row.addWidget(QLabel("Depth Min:"))
@@ -255,15 +282,17 @@ class ControlsPanel(QWidget):
         depth_layout.addLayout(max_row)
 
         self.btn_apply_depth = QPushButton("Apply Depth Threshold")
+        self.btn_apply_depth.setMaximumHeight(26)
         self.btn_apply_depth.clicked.connect(self._on_apply_depth_threshold)
         depth_layout.addWidget(self.btn_apply_depth)
 
         self.depth_info = QLabel()
         self.depth_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.depth_info.setWordWrap(True)
+        self.depth_info.setStyleSheet("font-size: 9px;")
+        self.depth_info.setMaximumHeight(30)
         depth_layout.addWidget(self.depth_info)
         main_layout.addWidget(depth_group)
-        main_layout.addStretch()
 
     def _apply_style(self):
         from GUI.inc.styles import GLOBAL_STYLESHEET

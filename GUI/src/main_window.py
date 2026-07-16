@@ -94,6 +94,11 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(scroll, stretch=25)
 
+        # ── Dynamic sizing: make ControlsPanel scale to fit window ───
+        self._scroll = scroll
+        self._right_panel = right_panel
+        self.installEventFilter(self)
+
         # ── Vision pipeline ───────────────────────────────────────────
         config = DetectionConfig()
         self.frame_processor = FrameProcessor(config)
@@ -347,6 +352,25 @@ class MainWindow(QMainWindow):
         self.camera_thread.stop_capture()
         self._stop_playback_thread()
         super().closeEvent(a0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_controls_height()
+
+    def eventFilter(self, obj, event):
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.Resize:
+            self._update_controls_height()
+        return super().eventFilter(obj, event)
+
+    def _update_controls_height(self):
+        """Make ControlsPanel dynamically scale to fit available space.
+        Sets its maximum height so it never requires scrolling within itself.
+        """
+        available = self._scroll.viewport().height()
+        if available <= 0:
+            return
+        self.controls_panel.setMaximumHeight(int(available * 0.55))
 
 
 if __name__ == "__main__":
