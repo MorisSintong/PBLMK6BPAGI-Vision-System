@@ -23,7 +23,7 @@ Modul Vision bertanggung jawab untuk:
 |---|---|
 | `camera_thread.py` | Worker thread untuk capture kamera. Separate acquisition thread + queue(maxsize=2). Unfiltered depth capture sebelum RS filters. Mengirim frame memory-safe ke GUI via sinyal Qt. |
 | `frame_processor.py` | Engine utama pipeline vision (5 stage). Chain of Responsibility dengan error handling robust. LUT-based depth colormap. Dual-model YOLO swap + CLAHE + hysteresis. Fusion two-pass architecture. NavigationStage (VFH-lite). VisualAnnotationStage draws HUD on both RGB and depth. |
-| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference. FP16 auto-detected, GPU warm-up, input_size=320, batch tensor transfer. Output `Detection` dataclass. |
+| `yolowrapper.py` | Memuat model YOLOv8 dan melakukan inference. FP16 auto-detected, GPU warm-up, input_size=320, batch tensor transfer. Output `Detection` dataclass. Memvalidasi kontrak model saat load: file exists, task detect/segment, class set `mobil/motor/person` — weight yang tidak cocok ditolak dengan `ModelValidationError`. |
 | `obstacle_detector.py` | Mengekstrak informasi jarak dan prioritas dari depth frame. Tidak mengcopy/memodifikasi color frame. Reusable float32 buffer. Thread-safe `last_detections`. |
 | `video_recorder.py` | Non-blocking recording API (start/stop/save). Saves RGB AVI + depth NPY + metadata JSON. CLI mode available. |
 | `video_playback_thread.py` | Replays recorded RGB+depth videos through full 5-stage pipeline. Supports individual NPY + stacked NPY depth formats. |
@@ -125,5 +125,6 @@ Karena kontrak sinyal identik, semua widget (DepthView, RadarView, AlertPanel) b
 - Dark mode hysteresis: enter dark at brightness < 35, exit at > 50 (prevents flicker).
 - Auto-switch view: GUI automatically switches RGB/Depth view based on is_dark signal.
 - FP16 inference aktif saat CUDA tersedia (~2x faster on Tensor Cores).
+- Model validation guard: `YOLOWrapper` menolak weight yang file-nya hilang/korup, task-nya bukan detect/segment (mis. classify), atau class set-nya beda dari `mobil/motor/person` — mencegah silent failure (deteksi kosong / label desync di FusionStage & AlertPanel).
 - LUT depth colormap ~3x lebih cepat dari mask approach.
 - ObstacleDetector tidak mengcopy color frame (performance optimization).

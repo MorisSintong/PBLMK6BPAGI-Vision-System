@@ -1,12 +1,12 @@
 # Progress Report — Vision System for Security Robot
 
-> Last updated: 26 Juni 2026
+> Last updated: 16 Juli 2026
 
 ---
 
 ## Overview
 
-Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, video recording/playback, dan 194 tests.
+Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel RealSense D455) + machine vision (YOLOv8) untuk security robot. Sistem telah mencapai fase production-ready dengan 5-stage pipeline, dual-model YOLO, dark mode adaptation, gap-based navigation, auto-switch view, video recording/playback, model validation guard, dan 205 tests.
 
 ---
 
@@ -16,7 +16,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 
 | Deliverable | Role | Detail |
 |---|---|---|
-| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 5 stages: DepthProcessing, YOLODetection, Fusion, Navigation, VisualAnnotation. 194/194 tests pass |
+| `FrameProcessor` pipeline | R1 (Moris) | Chain of Responsibility pattern. 5 stages: DepthProcessing, YOLODetection, Fusion, Navigation, VisualAnnotation. 205/205 tests pass |
 | Pipeline → CameraThread integration | R1 | Separate acquisition thread + queue(maxsize=2). Camera capture decoupled from processing |
 | Depth filters (preprocessing) | R3 (Long) | Decimation (configurable) → spatial → temporal → hole-filling di CameraThread via pyrealsense2 SDK |
 | Unfiltered depth capture | R1 | `depth_frame_raw` captured BEFORE RS filters for depth model inference |
@@ -24,6 +24,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | `ObstacleDetector` optimization | R1 | No frame copy (returns same object), no zone tick drawing, reusable float32 buffer |
 | LUT depth colormap | R1 | Pre-computed 256-entry LUT, ~3x faster than mask approach. Rebuilds on threshold change |
 | `YOLOWrapper` optimization | R1/R2 | FP16 inference (auto-detected), GPU warm-up, input_size=320, batch tensor transfer |
+| Model validation guard | R1/R2 | `YOLOWrapper` memvalidasi kontrak model saat load: file exists, task detect/segment, class set `mobil/motor/person`. Missing/corrupt/wrong-task/mismatched-class weights → `ModelValidationError` di startup (11 tests) |
 | Dual-model swap | R1/R5 | `ModelRGB_V4.2.pt` (normal) + `ModelDepth_V4.pt` (dark mode on unfiltered depth colormap) |
 | Lazy depth model loading | R1 | Depth model loaded only on first dark frame — saves VRAM at startup |
 | CLAHE dark mode | R1 | LAB color space enhancement (clipLimit=3.0) for dim scenes. `rgb_confidence` metadata |
@@ -43,7 +44,7 @@ Proyek ini membangun sistem obstacle avoidance berbasis depth camera (Intel Real
 | Team roles documentation | R1 | `Doc/texDoc/teamRoles/Roles.pdf` + `ROLES.md` |
 | Model evaluation report | R5 (Hamid) | `Doc/model_evaluation_report_v4.md` — V4.2 RGB (98.37% mAP) + V4 Depth (87.23% mAP) |
 | Dataset acquisition guide | R5 | `data-collection.md` — comprehensive guide for R5 |
-| Test suite | R1 | 194 tests: 92 frame_processor + 31 obstacle_detector + 24 camera_thread + 47 video (recorder + playback). All pass in ~25s |
+| Test suite | R1 | 205 tests: 92 frame_processor + 31 obstacle_detector + 24 camera_thread + 47 video (recorder + playback) + 11 yolowrapper validation. All pass in ~25s |
 | Benchmark suite | R1/R5 | `tests/benchmark.py` — 17/17 software criteria PASS (42.5 FPS, P95 30.50ms) |
 | NavigationStage (gap-based steering) | R1 | Polar histogram (18 sectors), gap finding + scoring, hysteresis, safety override, speed mapping |
 | Dataset acquisition (≥300 frames) | R5 (Hamid) | ✅ RGB: 2668 frames, Depth: 2471 frames |
@@ -175,7 +176,8 @@ CameraThread (acquisition thread)
 | `test_camera_thread.py` | 24 | Instantiation, thresholds (validation + propagation), BGR→QImage (pixel integrity, grayscale, dimensions), empty depth cache (cached + shape change), thread lifecycle, signals (frame_pair, distance, obstacles, navigation, light_mode) |
 | `test_video_recorder.py` | 16 | Instantiation, recording API (start/stop/save), metadata JSON, frame buffering (RGB/depth), directory handling, multiple sessions, edge cases |
 | `test_video_playback_thread.py` | 31 | Instantiation, depth loading (stacked_npy, individual_npy), playback lifecycle, pipeline integration, RGB/depth frame output, signal emission, error handling |
-| **Total** | **194** | All pass in ~25s |
+| `test_yolowrapper_validation.py` | 11 | Model contract guard: valid segment/detect pass, classify/pose/unknown task rejected, mismatched/partial class set rejected, missing/corrupt file raises, real-model integration |
+| **Total** | **205** | All pass in ~25s |
 
 ## Hasil Benchmark (RTX A4000 Laptop GPU, FP16, 320px)
 
@@ -205,8 +207,8 @@ CameraThread (acquisition thread)
 
 | Gap | Detail |
 |---|---|
-| R5: Regression test otomatis | Automated regression test not yet built |
-| Model weights belum di repo | `ModelRGB_V4.2.pt` dan `ModelDepth_V4.pt` di `.gitignore` |
+| Model weights belum di repo | `ModelRGB_V4.2.pt` dan `ModelDepth_V4.pt` di `.gitignore` — download manual per environment |
+| FPS CPU-only rendah | Tanpa GPU (AMD Ryzen 5 6600H): 1.3–3.4 FPS. Solusi: GPU CUDA / Jetson untuk deployment (lihat `Doc/field_test_report_role5.md`) |
 
 ## Validasi Hardware (data/recordings/)
 
@@ -215,10 +217,12 @@ Bukti capture real-hardware tersimpan di `data/recordings/` (gitignored). Record
 | Recording | Frames | Duration | Size |
 |---|---|---|---|
 | `recording_20260714_134023` | 686 | 29.28s | 17.23 MB |
-| `recording_20260714_152843` | (active session) | - | 333.27 MB |
-| `recording_20260714_192719` | (active session) | - | 161.98 MB |
-| `recording_20260714_193810` | (active session) | - | 117.05 MB |
-| `recording_20260714_194459` | (active session) | - | 14.32 MB |
+| `recording_20260714_152843` | 6258 | ~208s | 333.27 MB |
+| `recording_20260714_192719` | - | - | 161.98 MB |
+| `recording_20260714_193810` | - | - | 117.05 MB |
+| `recording_20260714_194459` | - | - | 14.32 MB |
+
+> Analisis FPS per sesi (Siang/Malam) tersedia di `Doc/field_test_report_role5.md`.
 
 ## Riwayat Merge
 

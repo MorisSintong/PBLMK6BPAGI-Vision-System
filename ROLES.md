@@ -29,7 +29,7 @@
 - Pipeline ≥25 FPS (RealSense) / ≥30 FPS (webcam)
 - Semua kontrak antar stage didokumentasikan dan disetujui tim
 - Semua file konfigurasi dikelola sebagai single source of truth
-- 194/194 tests pass
+- 205/205 tests pass
 
 ---
 
@@ -45,7 +45,7 @@
 ### File
 | File | Keterangan |
 |---|---|
-| `Vision/src/yolowrapper.py` | YOLO wrapper (FP16, warm-up, 320px, batch transfer) |
+| `Vision/src/yolowrapper.py` | YOLO wrapper (FP16, warm-up, 320px, batch transfer, model contract guard) |
 | `Vision/models/ModelRGB_V4.2.pt` | RGB model (latest) |
 | `Vision/models/ModelDepth_V4.pt` | Depth model (latest, trained on unfiltered depth) |
 | `environment.yml` | Dependency ultralytics 8.4.77 |

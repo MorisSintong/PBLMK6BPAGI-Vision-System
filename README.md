@@ -54,6 +54,7 @@ main.py → MainWindow
 | Video recording | ✅ | Non-blocking API + CLI mode. Simpan RGB AVI + depth NPY + metadata JSON |
 | Video playback | ✅ | Replay recording melalui pipeline penuh. Kontrol: pause/resume, speed (0.25–4.0x), loop |
 | Input Source switcher | ✅ | Toggle Live Camera ↔ Video File di ControlsPanel |
+| Model validation guard | ✅ | `YOLOWrapper` memvalidasi kontrak model saat load: file ada, task detect/segment, class set cocok (`mobil`, `motor`, `person`). Weight yang salah arsitektur / korup / kelas beda ditolak dengan `ModelValidationError` di startup, bukan crash di tengah run |
 
 ## Struktur Project
 
@@ -65,19 +66,20 @@ main.py → MainWindow
 ├── data-collection.md         # Panduan akuisisi dataset (R5)
 ├── environment.yml            # Dependensi conda/pip
 ├── pyproject.toml             # Konfigurasi Ruff + pytest
-├── tests/                     # Test suite (194 tests)
+├── tests/                     # Test suite (205 tests)
 │   ├── test_frame_processor.py    # 92 tests — pipeline, fusion, navigation, dark mode, hysteresis, annotation
 │   ├── test_obstacle_detector.py  # 31 tests — detection, zona, filtering, thread safety
 │   ├── test_camera_thread.py      # 24 tests — signal, threshold, QImage, cache
 │   ├── test_video_recorder.py     # 16 tests — recording API, metadata, frame buffering
 │   ├── test_video_playback_thread.py # 31 tests — playback thread, depth loading, pipeline integration
+│   ├── test_yolowrapper_validation.py # 11 tests — model contract guard (task, class set, corrupt/missing file)
 │   └── benchmark.py               # Benchmark suite (17 kriteria dari ROLES.md)
 ├── Vision/
 │   ├── src/                   # Modul vision utama
 │   │   ├── camera_thread.py   # Capture + filter + pipeline (acq thread terpisah, 6 Qt signals incl. error)
 │   │   ├── frame_processor.py # Orchestrator pipeline (5 stage)
 │   │   ├── obstacle_detector.py # Depth obstacle detection (tanpa frame copy)
-│   │   ├── yolowrapper.py     # YOLOv8 inference (FP16, warm-up, batch transfer)
+│   │   ├── yolowrapper.py     # YOLOv8 inference (FP16, warm-up, batch transfer, model contract guard)
 │   │   ├── video_recorder.py  # Non-blocking recording API + CLI
 │   │   └── video_playback_thread.py # Replay recorded videos through full pipeline
 │   ├── models/                # (.gitignore) Model weights
@@ -99,8 +101,11 @@ main.py → MainWindow
 │       ├── ui_config.py       # Konstanta UI + threshold
 │       └── styles.py          # Global stylesheet + color constants
 └── Doc/
-    ├── problems_audit_report.md      # Audit report historis (arsip)
-    └── model_evaluation_report_v4.md # Evaluasi model R5
+    ├── report.md                      # Laporan 14 minggu (timeline per minggu, progress %)
+    ├── problems_audit_report.md       # Audit report historis (arsip)
+    ├── model_evaluation_report_v4.md  # Evaluasi model R5
+    ├── field_test_report_role5.md     # Field test real-hardware (14 Juli 2026, 7 sesi)
+    └── Figures/                       # Diagram arsitektur + alur data (SVG)
 ```
 
 ## Requirements
@@ -150,7 +155,8 @@ python -m pytest tests/test_frame_processor.py -v
 | `test_camera_thread.py` | 24 | Instansiasi, threshold (validasi + propagasi), BGR→QImage (integritas pixel, grayscale, dimensi), empty depth cache, thread lifecycle, signal (frame_pair, distance, obstacles, navigation, light_mode) |
 | `test_video_recorder.py` | 16 | Recording API, metadata, frame buffering, directory handling, stop/save, multiple sessions |
 | `test_video_playback_thread.py` | 31 | Playback thread lifecycle, depth loading (stacked_npy, individual_npy), pipeline integration, RGB/depth frame output |
-| **Total** | **194** | |
+| `test_yolowrapper_validation.py` | 11 | Model contract guard: valid segment/detect pass, classify/pose/unknown task rejected, mismatched/partial class set rejected, missing/corrupt file raises `ModelValidationError`, real models integration |
+| **Total** | **205** | |
 
 ## Arsitektur Pipeline
 

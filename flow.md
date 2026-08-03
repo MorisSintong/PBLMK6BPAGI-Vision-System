@@ -261,7 +261,18 @@ input_size = 320 × 320 pixels (configurable)
 
 **Mengapa 320×320?** Ini adalah keseimbangan antara kecepatan dan akurasi. Untuk robot keamanan pada jarak dekat (0.5–5m), 320×320 memberikan deteksi yang memadai sambil ~40% lebih cepat daripada 416×416.
 
-#### 3.3.5 Format Output Detection
+#### 3.3.5 Validasi Kontrak Model (Load-time Guard)
+
+Sebelum inference pertama, `YOLOWrapper.__init__` memvalidasi weight file yang di-load terhadap kontrak pipeline:
+
+1. **File ada** — `ModelValidationError` jika path tidak ditemukan.
+2. **Load berhasil** — exception saat parse (weight korup / arsitektur lebih baru dari `ultralytics` terpasang, mis. YOLOv26) ditangkap dan di-re-raise sebagai `ModelValidationError` dengan pesan yang menjelaskan kemungkinan mismatch arsitektur.
+3. **Task didukung** — model harus bertipe `detect` atau `segment`. Model `classify`/`pose` ditolak karena tidak mengekspos `.boxes` yang dibutuhkan `detect()` (tanpa guard, model `classify` akan diam-diam mengembalikan deteksi kosong setiap frame).
+4. **Class set cocok** — nama class harus persis `EXPECTED_CLASS_NAMES = ("mobil", "motor", "person")`. Model dengan class berbeda ditolak untuk mencegah desync `class_id → label` di FusionStage/AlertPanel.
+
+Guard berjalan sekali saat load (bukan per-frame) sehingga tidak mempengaruhi performa runtime. Tujuannya: kegagalan weight yang salah muncul **loudly di startup**, bukan crash/silent behavior di tengah operasi. Test: `tests/test_yolowrapper_validation.py` (11 tests).
+
+#### 3.3.6 Format Output Detection
 
 ```python
 @dataclass
