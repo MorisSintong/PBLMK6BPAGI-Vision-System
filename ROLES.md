@@ -136,7 +136,7 @@ RealSense D455 terganggu sinar matahari langsung. Uji pagi/sore, mendung, atau a
 | File | Keterangan |
 |---|---|
 | `Vision/src/frame_processor.py` | FusionStage implementation |
-| `Vision/src/fusion.md` | FusionStage documentation |
+| `Doc/fusion.md` | FusionStage documentation |
 
 ### Input dari
 - **Role 2** — `FrameData.detections` (List[Detection])

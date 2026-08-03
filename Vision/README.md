@@ -27,7 +27,8 @@ Modul Vision bertanggung jawab untuk:
 | `obstacle_detector.py` | Mengekstrak informasi jarak dan prioritas dari depth frame. Tidak mengcopy/memodifikasi color frame. Reusable float32 buffer. Thread-safe `last_detections`. |
 | `video_recorder.py` | Non-blocking recording API (start/stop/save). Saves RGB AVI + depth NPY + metadata JSON. CLI mode available. |
 | `video_playback_thread.py` | Replays recorded RGB+depth videos through full 5-stage pipeline. Supports individual NPY + stacked NPY depth formats. |
-| `fusion.md` | Dokumentasi FusionStage: two-pass architecture, overlap metric, priority matrix. |
+
+> Dokumentasi FusionStage (two-pass architecture, overlap metric, priority matrix): `Doc/fusion.md`.
 
 ## Konfigurasi (`inc`)
 

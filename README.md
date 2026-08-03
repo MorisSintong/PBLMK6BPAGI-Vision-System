@@ -102,6 +102,7 @@ main.py → MainWindow
 │       └── styles.py          # Global stylesheet + color constants
 └── Doc/
     ├── report.md                      # Laporan 14 minggu (timeline per minggu, progress %)
+    ├── fusion.md                      # Dokumentasi FusionStage (two-pass, overlap, priority matrix)
     ├── problems_audit_report.md       # Audit report historis (arsip)
     ├── model_evaluation_report_v4.md  # Evaluasi model R5
     ├── field_test_report_role5.md     # Field test real-hardware (14 Juli 2026, 7 sesi)
